@@ -4,7 +4,7 @@ import yaml
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Set
-from agent_poi.financial.logger import get_financial_logger, log_audit_event
+from agent_poi.financial.logger import get_financial_logger
 
 
 @dataclass

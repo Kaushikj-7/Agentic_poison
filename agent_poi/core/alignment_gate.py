@@ -5,7 +5,6 @@ or attempt to hijack execution by introducing unsanctioned imperative directives
 Grounded in Task Shield (ACL 2025).
 """
 
-import math
 import re
 from typing import List, Tuple, Optional, Dict, Any
 from agent_poi.memory.schema import MemoryItem, FirewallDecision, FirewallStatus

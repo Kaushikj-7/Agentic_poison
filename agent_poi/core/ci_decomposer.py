@@ -6,7 +6,7 @@ Grounded in Abdelnabi & Bagdasarian (arXiv:2605.17634, May 2026).
 """
 
 import re
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from agent_poi.memory.schema import CIPartition, SourceOrigin
 
 
@@ -44,15 +44,18 @@ class CIDecomposer:
 
     def __init__(
         self,
-        weight_auth: float = 0.50,
-        weight_imperative: float = 0.25,
-        weight_type_mismatch: float = 0.15,
-        weight_framing: float = 0.10,
+        weight_auth: Optional[float] = None,
+        weight_imperative: Optional[float] = None,
+        weight_type_mismatch: Optional[float] = None,
+        weight_framing: Optional[float] = None,
     ):
-        self.w_auth = weight_auth
-        self.w_imp = weight_imperative
-        self.w_mismatch = weight_type_mismatch
-        self.w_frame = weight_framing
+        from agent_poi.core.config_loader import get_trust_model_config
+        cfg_weights = get_trust_model_config().get("risk_weights", {})
+
+        self.w_auth = weight_auth if weight_auth is not None else cfg_weights.get("self_asserted_auth", 0.45)
+        self.w_imp = weight_imperative if weight_imperative is not None else cfg_weights.get("imperative_density", 0.25)
+        self.w_mismatch = weight_type_mismatch if weight_type_mismatch is not None else cfg_weights.get("type_mismatch", 0.20)
+        self.w_frame = weight_framing if weight_framing is not None else cfg_weights.get("suspicious_framing", 0.10)
 
     def decompose(self, content: str, declared_origin: SourceOrigin = SourceOrigin.UNTRUSTED_WEB) -> CIPartition:
         """Decompose text into Contextual Integrity parameters and extract risk indicators."""
