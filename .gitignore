@@ -1,0 +1,33 @@
+# Cloned reference repo
+everything-claude-code/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+.env
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# OS files
+.DS_Store
+Thumbs.db
