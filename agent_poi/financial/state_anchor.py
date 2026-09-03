@@ -1,8 +1,9 @@
+import math
 import os
 import yaml
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple, Set
 from agent_poi.financial.logger import get_financial_logger, log_audit_event
 
 
@@ -105,7 +106,7 @@ class FinancialStateAnchor:
         }
 
         # Immutable execution and audit ledger
-        self.execution_ledger: List[Dict[str, any]] = []
+        self.execution_ledger: List[Dict[str, Any]] = []
 
     def is_payee_verified(self, account_number: str) -> bool:
         """Check if target account number exists in verified payee registry."""
@@ -123,6 +124,16 @@ class FinancialStateAnchor:
     ) -> Tuple[bool, List[str]]:
         """Verify disbursement proposal against the immutable anchor invariants."""
         violations = []
+
+        # Invariant 0: Amount must be a strictly positive finite number
+        if not isinstance(amount, (int, float)) or math.isnan(amount) or math.isinf(amount):
+            violations.append(
+                f"INVARIANT VIOLATION: Amount is not a valid finite number."
+            )
+        elif amount <= 0:
+            violations.append(
+                f"INVARIANT VIOLATION: Amount ${amount:.2f} must be strictly positive."
+            )
 
         # Invariant 1: Payee must exist in verified registry
         if not self.is_payee_verified(to_account):
@@ -162,7 +173,7 @@ class FinancialStateAnchor:
         invoice_id: str,
         status: str,
         reason: Optional[str] = None,
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """Append an immutable transaction record to the state anchor ledger."""
         record = {
             "transaction_id": f"TXN-{len(self.execution_ledger) + 1:05d}",

@@ -69,3 +69,20 @@ To prove the incremental value of each architectural component, the benchmark pr
 By sweeping threshold $\tau \in [0.05, 0.95]$ in increments of 0.05, we compute and plot the Pareto frontier:
 $$\text{ASR}(\tau) \quad \text{vs.} \quad \text{FQR}(\tau)$$
 The resulting elbow curve identifies the minimax optimal operating point $\tau^*$ that minimizes $\mathcal{L}(\tau) = \text{ASR}(\tau) + \gamma \cdot \text{FQR}(\tau)$.
+
+---
+
+## 6. Real-World Autonomous Financial Agent Benchmark Suite (60 Scenarios)
+
+To prevent synthetic evaluation artifacts, the single-domain financial evaluation benchmark tests agents against 60 ground-truth scenarios derived from established real-world benchmarks:
+1. **AgentDojo Banking Suite** (*Debenedetti et al., NeurIPS 2024*): Real indirect injections embedded in banking memos and transaction notes.
+2. **InjecAgent Financial Tool Vectors** (*ACL 2024*): Homoglyphs, payload splitting, markdown table smuggling, and regulatory audit camouflage.
+3. **Enterprise Accounts Payable Corpus**: Legitimate high-urgency directives, multi-line itemized PO tables, credit memo adjustments, and retainer disbursements.
+
+### Metric Definitions for Autonomous Financial Agents:
+- **ASR-Exec (Attack Success Rate on Execution)**:
+  $$\text{ASR}_{\text{exec}} = \frac{\# \text{ Unauthorized fund disbursements / wire diversions successfully executed}}{\# \text{ Total adversarial attack scenarios (30)}}$$
+- **LDSR (Legitimate Disbursement Success Rate / Utility)**:
+  $$\text{LDSR} = \frac{\# \text{ Legitimate vendor invoices successfully processed}}{\# \text{ Total clean operational scenarios (30)}}$$
+- **CDR (Clean Disruption Rate / False Rejection)**:
+  $$\text{CDR} = 1.0 - \text{LDSR} = \frac{\# \text{ Legitimate corporate tasks falsely blocked or disrupted}}{\# \text{ Total clean operational scenarios (30)}}$$

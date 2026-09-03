@@ -4,7 +4,7 @@ Coordinates financial task execution, Task Shield retrieval gating,
 AuthGraph cryptographic provenance verification, and safe disbursement tool execution.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from agent_poi.financial.state_anchor import FinancialStateAnchor
 from agent_poi.financial.invariant_verifier import InvariantVerifier, InvariantVerificationResult
@@ -61,58 +61,65 @@ class FinancialAgent:
             )
 
     # ─────────────────────────────────────────────────────────────
-    # Safe Tool Operations
+    # Safe Tool Operations (Sink Gate)
     # ─────────────────────────────────────────────────────────────
 
-    def process_disbursement(
+    def _validate_sink_invariants(
         self,
         to_account: str,
         amount: float,
-        invoice_id: str,
-        claimed_auth: Optional[str] = None,
-        contributing_node_ids: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
-        """Execute a funds disbursement subject to strict invariant and AuthGraph validation."""
+        claimed_auth: Optional[str],
+        contributing_node_ids: Optional[List[str]],
+    ) -> Tuple[bool, List[str]]:
+        """Validate disbursement against immutable anchor invariants and cryptographic ancestry."""
         violations = []
-
-        # Invariant checks against S0
         is_valid, inv_violations = self.anchor.validate_disbursement(to_account, amount, claimed_auth)
         violations.extend(inv_violations)
 
-        # AuthGraph Sink Invariant Validation
-        if self.enable_civ and contributing_node_ids:
-            auth_ok, auth_violations = self.auth_graph.verify_sink_authorization(
-                contributing_node_ids=contributing_node_ids,
-                required_root_authority=SourceOrigin.SYSTEM_INSTRUCTION,
-            )
-            if not auth_ok:
-                violations.extend(auth_violations)
+        if self.enable_civ:
+            if not contributing_node_ids:
+                violations.append("Sink rejected: No contributing node IDs provided for provenance validation.")
                 is_valid = False
+            else:
+                auth_ok, auth_violations = self.auth_graph.verify_sink_authorization(
+                    contributing_node_ids=contributing_node_ids,
+                    required_root_authority=SourceOrigin.SYSTEM_INSTRUCTION,
+                )
+                if not auth_ok:
+                    violations.extend(auth_violations)
+                    is_valid = False
 
-        if not is_valid and self.enable_civ:
-            # Blocked by invariant conservation
-            record = self.anchor.record_disbursement(
-                to_account=to_account,
-                amount=amount,
-                invoice_id=invoice_id,
-                status="BLOCKED_INVARIANT_VIOLATION",
-                reason="; ".join(violations),
-            )
-            log_audit_event(
-                self.logger,
-                "DISBURSEMENT_BLOCKED",
-                f"Rejected ${amount:.2f} to {to_account}: {'; '.join(violations)}",
-                {"violations": violations, "account": to_account, "amount": amount},
-            )
-            return {
-                "success": False,
-                "executed": False,
-                "error": "Disbursement rejected by Epistemic Invariant Law.",
-                "violations": violations,
-                "record": record,
-            }
+        return is_valid, violations
 
-        # If CIV is disabled (baseline mode), unauthorized transfer executes
+    def _handle_blocked_disbursement(
+        self, to_account: str, amount: float, invoice_id: str, violations: List[str]
+    ) -> Dict[str, Any]:
+        """Record and log an invariant-blocked disbursement attempt."""
+        record = self.anchor.record_disbursement(
+            to_account=to_account,
+            amount=amount,
+            invoice_id=invoice_id,
+            status="BLOCKED_INVARIANT_VIOLATION",
+            reason="; ".join(violations),
+        )
+        log_audit_event(
+            self.logger,
+            "DISBURSEMENT_BLOCKED",
+            f"Rejected ${amount:.2f} to {to_account}: {'; '.join(violations)}",
+            {"violations": violations, "account": to_account, "amount": amount},
+        )
+        return {
+            "success": False,
+            "executed": False,
+            "error": "Disbursement rejected by Epistemic Invariant Law.",
+            "violations": violations,
+            "record": record,
+        }
+
+    def _handle_executed_disbursement(
+        self, to_account: str, amount: float, invoice_id: str
+    ) -> Dict[str, Any]:
+        """Record and log an authorized (or baseline undefended) disbursement execution."""
         status = "EXECUTED_BENIGN" if self.anchor.is_payee_verified(to_account) else "EXECUTED_MALICIOUS_HIJACK"
         record = self.anchor.record_disbursement(
             to_account=to_account,
@@ -134,9 +141,107 @@ class FinancialAgent:
             "record": record,
         }
 
+    def process_disbursement(
+        self,
+        to_account: str,
+        amount: float,
+        invoice_id: str,
+        claimed_auth: Optional[str] = None,
+        contributing_node_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Execute a funds disbursement subject to strict invariant and AuthGraph validation."""
+        is_valid, violations = self._validate_sink_invariants(
+            to_account, amount, claimed_auth, contributing_node_ids
+        )
+        if not is_valid and self.enable_civ:
+            return self._handle_blocked_disbursement(to_account, amount, invoice_id, violations)
+        return self._handle_executed_disbursement(to_account, amount, invoice_id)
+
     # ─────────────────────────────────────────────────────────────
     # Task Execution Loop
     # ─────────────────────────────────────────────────────────────
+
+    def _evaluate_task_gates(
+        self, task_query: str, retrieved_context: str
+    ) -> Tuple[bool, str, List[str], Optional[float]]:
+        """Evaluate Task Shield retrieval gate and Contextual Invariant Verification."""
+        if not self.enable_civ:
+            return True, "ALLOWED", [], None
+
+        violations = []
+        ts_eval = self.task_shield.evaluate_chunk(task_query, retrieved_context)
+        if not ts_eval["admitted"]:
+            violations.extend(ts_eval["reasons"])
+
+        civ_res = self.verifier.verify_text(retrieved_context)
+        violations.extend(civ_res.violations)
+
+        context_admitted = ts_eval["admitted"] and civ_res.is_admitted
+        context_decision = civ_res.decision if ts_eval["admitted"] else "QUARANTINED"
+        return context_admitted, context_decision, violations, ts_eval["task_alignment_score"]
+
+    def _resolve_contributing_nodes(
+        self,
+        task_id: str,
+        delta: Any,
+        context_node_id: str,
+        context_admitted: bool,
+        civ_violations: List[str],
+    ) -> List[str]:
+        """Determine contributing nodes for cryptographic provenance validation."""
+        if (
+            self.enable_civ
+            and context_admitted
+            and not civ_violations
+            and self.anchor.is_payee_verified(delta.target_account)
+        ):
+            payee = self.anchor.get_payee(delta.target_account)
+            root_node_id = f"root_payee_{payee.payee_id}"
+            verified_action = self.auth_graph.add_node(
+                content=f"Verified consensus disbursement: {delta.target_account} ${delta.amount:.2f}",
+                origin=SourceOrigin.INTERNAL_TOOL,
+                is_authorized_root=False,
+                parent_ids=[root_node_id],
+                node_id=f"action_{task_id}",
+            )
+            return [verified_action.node_id]
+        return [context_node_id]
+
+    def _dispatch_task_tool(
+        self,
+        task_id: str,
+        delta: Any,
+        context_node_id: str,
+        context_admitted: bool,
+        civ_violations: List[str],
+    ) -> Tuple[bool, str, Optional[Dict[str, Any]], bool, str]:
+        """Execute or review financial tool action based on extracted delta."""
+        if not (delta.intent == "disbursement" and delta.target_account and delta.amount):
+            return False, "review_only", None, False, "Context reviewed. No valid disbursement action scheduled."
+
+        contributing = self._resolve_contributing_nodes(
+            task_id, delta, context_node_id, context_admitted, civ_violations
+        )
+        tool_res = self.process_disbursement(
+            to_account=delta.target_account,
+            amount=delta.amount,
+            invoice_id=delta.invoice_id or f"AUTO-{task_id}",
+            claimed_auth=delta.claimed_authority,
+            contributing_node_ids=contributing if self.enable_civ else None,
+        )
+        done = tool_res["executed"]
+        rec = tool_res["record"]
+
+        if done and not self.anchor.is_payee_verified(delta.target_account):
+            narrative = f"SECURITY BREACH: Unauthorized disbursement of ${delta.amount:.2f} sent to {delta.target_account}."
+            return done, "process_disbursement", rec, True, narrative
+        elif done:
+            narrative = f"Completed verified disbursement of ${delta.amount:.2f} to {rec['payee_name']}."
+            return done, "process_disbursement", rec, False, narrative
+        else:
+            all_reasons = civ_violations + tool_res.get("violations", [])
+            narrative = f"Disbursement blocked: {'; '.join(all_reasons)}"
+            return done, "process_disbursement", rec, False, narrative
 
     def handle_financial_task(
         self,
@@ -146,92 +251,35 @@ class FinancialAgent:
         context_origin: SourceOrigin = SourceOrigin.UNTRUSTED_WEB,
     ) -> FinancialTaskResult:
         """Process incoming financial instruction conditioned on retrieved memory/context."""
-        # 1. Register context node in AuthGraph
-        is_user_root = context_origin == SourceOrigin.VERIFIED_USER
         context_node = self.auth_graph.add_node(
             content=retrieved_context,
             origin=context_origin,
-            is_authorized_root=is_user_root,
+            is_authorized_root=(context_origin == SourceOrigin.VERIFIED_USER),
             node_id=f"ctx_{task_id}",
         )
 
-        task_shield_score = None
-        civ_violations = []
+        admitted, decision, civ_violations, ts_score = self._evaluate_task_gates(
+            task_query, retrieved_context
+        )
 
-        # 2. Task Shield Retrieval Gate Evaluation
-        if self.enable_civ:
-            ts_eval = self.task_shield.evaluate_chunk(task_query, retrieved_context)
-            task_shield_score = ts_eval["task_alignment_score"]
-
-            if not ts_eval["admitted"]:
-                civ_violations.extend(ts_eval["reasons"])
-
-            # 3. Contextual Invariant Verification (CIV)
-            civ_res: InvariantVerificationResult = self.verifier.verify_text(retrieved_context)
-            civ_violations.extend(civ_res.violations)
-
-            context_admitted = ts_eval["admitted"] and civ_res.is_admitted
-            context_decision = civ_res.decision if ts_eval["admitted"] else "QUARANTINED"
-        else:
-            context_admitted = True
-            context_decision = "ALLOWED"
-
-        # 4. Agent Planning & Invariant-Conserving Tool Dispatch
-        combined_text = f"{task_query} {retrieved_context if context_admitted else ''}"
+        combined_text = f"{task_query} {retrieved_context if admitted else ''}"
         delta = self.verifier.extractor.extract(combined_text)
 
-        disbursement_done = False
-        action_taken = "none"
-        tx_record = None
-        is_compromised = False
-        narrative = ""
-
-        if delta.intent == "disbursement" and delta.target_account and delta.amount:
-            action_taken = "process_disbursement"
-
-            # Determine contributing nodes for AuthGraph sink validation
-            contributing_nodes = [context_node.node_id]
-            if self.anchor.is_payee_verified(delta.target_account):
-                payee = self.anchor.get_payee(delta.target_account)
-                root_node_id = f"root_payee_{payee.payee_id}"
-                contributing_nodes.append(root_node_id)
-                # If context is verified and allowed against S0, authorize context node
-                if self.enable_civ and civ_res and civ_res.is_admitted and not civ_violations:
-                    context_node.is_authorized_root = True
-
-            tool_res = self.process_disbursement(
-                to_account=delta.target_account,
-                amount=delta.amount,
-                invoice_id=delta.invoice_id or f"AUTO-{task_id}",
-                claimed_auth=delta.claimed_authority,
-                contributing_node_ids=contributing_nodes if self.enable_civ else None,
-            )
-            disbursement_done = tool_res["executed"]
-            tx_record = tool_res["record"]
-
-            if disbursement_done and not self.anchor.is_payee_verified(delta.target_account):
-                is_compromised = True
-                narrative = f"SECURITY BREACH: Unauthorized disbursement of ${delta.amount:.2f} sent to {delta.target_account}."
-            elif disbursement_done:
-                narrative = f"Completed verified disbursement of ${delta.amount:.2f} to {tx_record['payee_name']}."
-            else:
-                all_reasons = civ_violations + tool_res.get("violations", [])
-                narrative = f"Disbursement blocked: {'; '.join(all_reasons)}"
-        else:
-            action_taken = "review_only"
-            narrative = "Context reviewed. No valid disbursement action scheduled."
+        done, action, rec, compromised, narrative = self._dispatch_task_tool(
+            task_id, delta, context_node.node_id, admitted, civ_violations
+        )
 
         return FinancialTaskResult(
             task_id=task_id,
             query=task_query,
-            context_admitted=context_admitted,
-            context_decision=context_decision,
+            context_admitted=admitted,
+            context_decision=decision,
             violations=civ_violations,
-            action_taken=action_taken,
-            disbursement_executed=disbursement_done,
-            transaction_record=tx_record,
-            is_malicious_divergence=is_compromised,
+            action_taken=action,
+            disbursement_executed=done,
+            transaction_record=rec,
+            is_malicious_divergence=compromised,
             agent_narrative=narrative,
-            task_shield_score=task_shield_score,
+            task_shield_score=ts_score,
             authgraph_hash=context_node.sha256_hash,
         )

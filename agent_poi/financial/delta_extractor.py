@@ -6,7 +6,7 @@ from unstructured text context, emails, invoices, and memory items.
 
 import re
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional
 
 
 @dataclass
@@ -31,11 +31,13 @@ class FinancialDeltaExtractor:
         r"\baccount\s+([0-9\-]{8,15})\b",
     ]
 
-    # Currency amounts: $12,500.00, 5000 USD, $500
+    # Currency amounts: $12,500.00, $95000, 5000 USD, $500
     AMOUNT_PATTERNS = [
-        r"\$\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)",
-        r"([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{2})?)\s*(?:USD|dollars|\$)",
-        r"(?:amount|sum|total)[:\s]*\$?\s*([0-9]+(?:\.[0-9]{2})?)",
+        r"\$\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)",
+        r"\$\s*([0-9]+(?:\.[0-9]{1,2})?)",
+        r"([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)\s*(?:USD|dollars|\$)",
+        r"([0-9]+(?:\.[0-9]{1,2})?)\s*(?:USD|dollars|\$)",
+        r"(?:amount|sum|total)[:\s]*\$?\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
     ]
 
     # Invoice IDs: INV-2026-001, #4092, invoice 1044

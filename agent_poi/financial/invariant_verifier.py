@@ -5,7 +5,7 @@ Guarantees that passive text cannot mutate financial state invariants without ve
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from agent_poi.financial.state_anchor import FinancialStateAnchor
 from agent_poi.financial.delta_extractor import ContextualFinancialDelta, FinancialDeltaExtractor
 
@@ -35,27 +35,22 @@ class InvariantVerifier:
         delta = self.extractor.extract(text)
         return self.verify_delta(delta)
 
-    def verify_delta(self, delta: ContextualFinancialDelta) -> InvariantVerificationResult:
-        """Core verification logic for Contextual Financial Deltas."""
-        violations: List[str] = []
-
-        # If it's a passive memo with no account or amount, it's safe to admit into context
-        if delta.intent == "passive_memo" and not delta.has_override_attempt:
-            return InvariantVerificationResult(
-                is_admitted=True,
-                is_executable=True,
-                decision="ALLOWED",
-                violations=[],
-            )
-
-        # Invariant 1: Self-Asserted Authority in passive text is strictly prohibited
+    def _check_epistemic_invariants(self, delta: ContextualFinancialDelta) -> List[str]:
+        """Check for unauthorized self-asserted authority overrides in context."""
+        violations = []
         if delta.has_override_attempt:
             violations.append(
                 f"EPISTEMIC VIOLATION: Passive context asserts self-authorized override: '{delta.claimed_authority}'."
             )
+        return violations
 
-        # Invariant 2: Account Verification
+    def _check_account_and_limits(
+        self, delta: ContextualFinancialDelta
+    ) -> Tuple[List[str], Optional[str]]:
+        """Verify payee registration in S0 and disbursement ceilings."""
+        violations = []
         verified_name = None
+
         if delta.target_account:
             if not self.anchor.is_payee_verified(delta.target_account):
                 violations.append(
@@ -65,7 +60,6 @@ class InvariantVerifier:
                 payee = self.anchor.get_payee(delta.target_account)
                 verified_name = payee.name
 
-        # Invariant 3: Amount Limits
         if delta.amount is not None:
             if delta.amount > self.anchor.per_transaction_limit:
                 violations.append(
@@ -78,24 +72,32 @@ class InvariantVerifier:
                         f"LIMIT BREACH: Amount ${delta.amount:.2f} exceeds '{payee.name}' single limit (${payee.max_single_disbursement:.2f})."
                     )
 
-        # Decision routing
+        return violations, verified_name
+
+    def _resolve_decision(self, violations: List[str]) -> Tuple[bool, bool, str]:
+        """Determine admission and execution state based on invariant violations."""
         has_critical_breach = any("NOT in verified payee registry" in v for v in violations)
         has_epistemic_breach = any("EPISTEMIC VIOLATION" in v for v in violations)
 
         if has_critical_breach or has_epistemic_breach:
-            # Dangerous or poisoned context
-            is_admitted = False
-            is_executable = False
             decision = "BLOCKED" if has_critical_breach else "QUARANTINED"
+            return False, False, decision
         elif violations:
-            # Minor limit breach or warning
-            is_admitted = True
-            is_executable = False
-            decision = "QUARANTINED"
-        else:
-            is_admitted = True
-            is_executable = True
-            decision = "ALLOWED"
+            return True, False, "QUARANTINED"
+        return True, True, "ALLOWED"
+
+    def verify_delta(self, delta: ContextualFinancialDelta) -> InvariantVerificationResult:
+        """Core verification logic for Contextual Financial Deltas."""
+        if delta.intent == "passive_memo" and not delta.has_override_attempt:
+            return InvariantVerificationResult(
+                is_admitted=True, is_executable=True, decision="ALLOWED", violations=[]
+            )
+
+        violations = self._check_epistemic_invariants(delta)
+        acct_violations, verified_name = self._check_account_and_limits(delta)
+        violations.extend(acct_violations)
+
+        is_admitted, is_executable, decision = self._resolve_decision(violations)
 
         return InvariantVerificationResult(
             is_admitted=is_admitted,

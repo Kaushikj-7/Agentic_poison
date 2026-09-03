@@ -1,88 +1,136 @@
-# System Architecture: CTP Agent Poisoning Defense
+# AgentPOI System Architecture: Contextual Invariant Verification & Epistemic Consensus
 
-## Overview
+## 1. Executive Summary & Epistemic Foundations
 
-The **Contextual Trust Propagation (CTP)** framework defends autonomous LLM agents against context and memory poisoning across the entire lifecycle: from write-time ingestion to retrieval-time conditioning and tool execution.
+Modern autonomous agents operating on financial, accounting, and transactional workloads combine untrusted external context (retrieved memories, vendor invoices, emails, web-scraped documents) with high-consequence execution sinks (`transfer_funds`, `process_wire`, `update_payee`). Under standard LLM architectures, an adversary capable of injecting indirect prompt instructions can manipulate the agent's reasoning loop into executing unauthorized transactions.
 
-```
-+--------------------------------------------------------------------------------+
-|                             USER / EXTERNAL WORLD                              |
-+--------------------------------------------------------------------------------+
-                                       │
-                   [Write Action]      │      [User Query / Task]
-                                       ▼
-       +───────────────────────────────────────────────────────────+
-       |                  LAYER 1: WRITE-TIME FIREWALL             |
-       |                                                           |
-       |   1. CI Parameter Decomposer (5-Tuple Context Analysis)   |
-       |   2. Self-Asserted Authorization & Directive Detector     |
-       |   3. Provenance DAG & Multiplicative CTP Trust Scorer     |
-       +───────────────────────────────────────────────────────────+
-                                       │
-                      T(c) >= tau ?    ├───────── [ T(c) < tau ] ──► QUARANTINE VAULT
-                                       ▼                             (Isolated & Logged)
-       +───────────────────────────────────────────────────────────+
-       |               LAYER 2: SECURE MEMORY REPOSITORY           |
-       |                                                           |
-       |   • ChromaDB / In-Memory Scikit Vector Store              |
-       |   • Complete Provenance Metadata & Lineage Graph          |
-       +───────────────────────────────────────────────────────────+
-                                       │
-                        k-NN Candidate Retrieval
-                                       ▼
-       +───────────────────────────────────────────────────────────+
-       |               LAYER 3: RETRIEVAL-TIME ALIGNMENT GATE      |
-       |                                                           |
-       |   • Task Shield Semantic Alignment Proxy                  |
-       |   • Task-Memory Divergence Penalty                        |
-       |   • Sanitized Context Window Assembly                     |
-       +───────────────────────────────────────────────────────────+
-                                       │
-                             Sanitized Context
-                                       ▼
-       +───────────────────────────────────────────────────────────+
-       |               LAYER 4: AGENT SCAFFOLDING & TOOLS          |
-       |                                                           |
-       |   • Agent Policy Loop (LangGraph / Stateful Runner)       |
-       |   • Pluggable LLM: Deterministic Mock or Local Ollama     |
-       |   • Sensitive Mock Tools with Audit Trapping              |
-       |     (send_email, delete_record, transfer_funds)           |
-       +───────────────────────────────────────────────────────────+
-                                       │
-                                       ▼
-                          [Execution Audit & Metrics]
+**AgentPOI** resolves this vulnerability through **Dual-State Epistemic Consensus (DSEC)** and **Contextual Invariant Verification (CIV)**. Rather than attempting to detect all semantic injections in natural language—a problem formally shown to be intractable without utility loss (*Abdelnabi & Bagdasarian, arXiv:2605.17634*)—AgentPOI establishes an immutable, non-linguistic trust anchor against which all implied state mutations are validated prior to tool dispatch.
+
+---
+
+## 2. End-to-End System Architecture
+
+```mermaid
+flowchart TD
+    subgraph S_UNTRUSTED ["UNTRUSTED CONTEXT ENVIRONMENT"]
+        DocIn["Input Document / Invoice c\n(Origin: Web / Email / Peer)"]
+        UserQ["User Task Query q\n(Origin: Authenticated Principal)"]
+    end
+
+    subgraph S_INGESTION ["TIER 1: CONTEXT INGESTION & DELTA EXTRACTION"]
+        Extractor["FinancialDeltaExtractor\nΔ(c) = ⟨p*, δa, α⟩\n• Target Account p*\n• Disbursement Amount δa\n• Claimed Authority α"]
+        DocIn --> Extractor
+    end
+
+    subgraph S_ALIGNMENT ["TIER 2: TASK SHIELD RETRIEVAL GATE (ACL 2025)"]
+        TSGate["TaskShieldGate\nScore(m, q) = cos(E(m), E(q)) - α · Divergence(m, q)"]
+        UserQ --> TSGate
+        DocIn --> TSGate
+        TSGate --> GateDecision{"Score ≥ τ_gate\n& No Unprompted Actions?"}
+    end
+
+    subgraph S_CONSENSUS ["TIER 3: DUAL-STATE EPISTEMIC CONSENSUS (CIV)"]
+        Anchor[("Immutable System Anchor S₀\n• Verified Payee Registry {p_i}\n• Transaction Limits (Ceilings)\n• Authorized Signers")]
+        Verifier["Contextual Invariant Verifier\nConstraint Evaluation: Δ(c) ⊨ S₀"]
+        
+        Extractor --> Verifier
+        Anchor <--> Verifier
+        Verifier --> CIVDecision{"Invariants Satisfied?"}
+    end
+
+    subgraph S_PROVENANCE ["TIER 4: AUTHGRAPH CRYPTOGRAPHIC DAG (arXiv:2605.26497)"]
+        DAG["AuthGraph Lineage Graph\nhash(v) = SHA256(v || parents)\nVerification: Lineage(sink) ⊆ Roots(S₀)"]
+        Anchor --> DAG
+        DocIn --> DAG
+    end
+
+    subgraph S_EXECUTION ["TIER 5: PROTECTED EXECUTION SINK"]
+        AgentLoop["FinancialAgent Execution Dispatch"]
+        Sink{"Process Disbursement Sink\n1. Target ∈ S₀ Registry?\n2. Amount ≤ Payee & Global Cap?\n3. Unbroken Lineage to S₀ Root?"}
+        AuditLedger[("Immutable Audit Ledger\nTXN Record + Cryptographic Hash")]
+        Quarantine["Quarantine Vault / Alert Dispatch"]
+        
+        GateDecision -- "Admitted" --> AgentLoop
+        CIVDecision -- "Admitted" --> AgentLoop
+        DAG --> Sink
+        Anchor --> Sink
+        AgentLoop --> Sink
+        
+        Sink -- "Consensus Passed" --> AuditLedger
+        Sink -- "Invariant Violation" --> Quarantine
+        GateDecision -- "Divergent" --> Quarantine
+        CIVDecision -- "Breach" --> Quarantine
+    end
 ```
 
 ---
 
-## 4-Layer Defense Scaffolding
+## 3. Component Deep Dive
 
-### Layer 1: Write-Time Memory Firewall
-Every context item (user memory, agent note, tool observation, or web-scraped document) is intercepted before insertion into the long-term memory store.
-- **CI Decomposer**: Analyzes the contextual integrity 5-tuple $\langle s, r, u, t, p \rangle$. Specifically extracts whether the item asserts an authorization principle.
-- **Taint Tracker**: Traverses the provenance graph to determine ancestor trust.
-- **Decision Engine**:
-  - $T(c) \ge \tau$: Stored in active memory.
-  - $\tau_{\text{crit}} \le T(c) < \tau$: Quarantined in isolated partition for audit.
-  - $T(c) < \tau_{\text{crit}}$: Blocked and dropped.
+### 3.1. Context Ingestion & Delta Extraction ($\Delta(c)$)
+The `FinancialDeltaExtractor` maps unstructured text into a formal mutation 3-tuple:
+$$\Delta(c) = \langle p^*, \delta a, \alpha \rangle$$
+Where:
+- $p^* \in \mathcal{P} \cup \{\bot\}$: Extracted destination account identifier.
+- $\delta a \in \mathbb{R}^+ \cup \{\bot\}$: Disbursement quantum.
+- $\alpha \in \mathcal{A}$: Implied authorization claim (e.g., "Director approved override").
 
-### Layer 2: Secure Vector Storage
-Stores active memories with embedded trust scores and parent references. Supports:
-- **ChromaDB**: For production local persistence.
-- **Fallback In-Memory Vector Store**: Zero-dependency TF-IDF / Cosine Similarity vector store for instant, self-contained evaluation on any machine.
+### 3.2. Task Shield Retrieval Gate (*ACL 2025*)
+Prevents dormant or sleeper memory payloads from reaching the agent's context window. Evaluates semantic relevance while penalizing unsolicited imperative commands:
+$$\text{Score}(m, q) = \cos(E(m), E(q)) - \alpha \cdot \text{Divergence}(m, q)$$
+If the candidate chunk $m$ contains imperative action verbs (*wire, transfer, remit, override*) that do not correlate with the authenticated query $q$, the divergence penalty suppresses admission.
 
-### Layer 3: Retrieval-Time Task Alignment Gate
-Prevents dormant/sleeper memory payloads from hijacking execution even if they somehow bypassed write-time filters:
-- Computes cosine similarity between active task $q$ and candidate memory $c$.
-- Detects divergence where memory attempts to redirect the agent to invoke high-impact actions unprompted by the user.
+### 3.3. Immutable State Anchor ($\mathcal{S}_0$)
+The trust root of the enterprise transactional system, maintained independently of language model context:
+$$\mathcal{S}_0 = \langle \mathcal{V}_{\text{payees}}, L_{\text{tx}}, L_{\text{daily}}, \Sigma_{\text{signers}}, \mathcal{L}_{\text{audit}} \rangle$$
+- $\mathcal{V}_{\text{payees}}$: Pre-verified vendor registry with per-vendor disbursement ceilings.
+- $L_{\text{tx}}$: Global single-transaction ceiling ($25,000.00).
+- $L_{\text{daily}}$: Cumulative daily ceiling ($100,000.00).
+- $\Sigma_{\text{signers}}$: Authorized internal cryptographic signing identities.
 
-### Layer 4: Safe Execution Runtime & Mock Tools
-Executes agent reasoning and tool actions.
-- **Mock Tools**:
-  - `send_email(to, subject, body)`
-  - `delete_record(table, id)`
-  - `transfer_funds(to_account, amount)`
-  Every invocation is logged with parameters and authorization status for rigorous, automated ASR-exec verification without safety hazards.
-- **Dual Execution Engine**:
-  - `MockLLMProvider`: Deterministic, zero-cost, runs on any laptop CPU in milliseconds.
-  - `OllamaProvider`: Connects to local `llama3.2:3b` or `qwen2.5:3b` for human-in-the-loop chat demos.
+### 3.4. Contextual Invariant Verification (CIV)
+The verifier tests whether the implied delta satisfies all invariant constraints:
+$$\Delta(c) \models \mathcal{S}_0 \iff \begin{cases} 
+p^* \in \text{dom}(\mathcal{V}_{\text{payees}}) \\
+\delta a \le \min\left(L_{\text{tx}}, \mathcal{V}_{\text{payees}}[p^*].\text{max\_disbursement}\right) \\
+\text{has\_override\_attempt}(\alpha) = \text{False}
+\end{cases}$$
+Any violation transitions the context into `QUARANTINED` or `BLOCKED` status, preventing downstream tool actuation.
+
+### 3.5. AuthGraph Cryptographic Lineage DAG (*arXiv:2605.26497*)
+Every context chunk and execution proposal forms a directed acyclic graph (DAG) node chained by SHA-256 parent hashes:
+$$h(v) = \text{SHA256}\left( \text{node\_id} \parallel \text{content} \parallel \text{origin} \parallel \bigoplus_{p \in \text{parents}} h(p) \right)$$
+At the execution sink (`process_disbursement`), the agent verifies that the proposal's lineage traces strictly to authenticated system roots ($\mathcal{S}_0$). If the path traverses unauthenticated web context, the sink rejects execution.
+
+---
+
+## 4. Threat Model & Invariant Defense Mapping
+
+| Attack Vector | Adversarial Mechanism | Intercepting Tier | Defense Guarantee |
+| :--- | :--- | :---: | :--- |
+| **Direct Wire Diversion** | Injects alternative routing number into invoice text. | Tier 3 (CIV) | Rejects accounts not present in $\mathcal{S}_0$ registry. |
+| **Homoglyph Payee Spoofing** | Replaces Latin characters with Cyrillic lookalikes (`Acme C1oud`). | Tier 3 (CIV) | Strict exact-match string and hash lookups against $\mathcal{S}_0$. |
+| **Sleeper Imperative Injection** | Embeds hidden commands triggered in subsequent turns. | Tier 2 (Task Shield) | Imperative divergence penalty suppresses retrieval. |
+| **Authority Claim Forgery** | Memos stating *"CEO authorized immediate policy bypass"*. | Tier 3 (CIV) | Passive context cannot self-assert transmission authority. |
+| **Unbounded Ceiling Escalation** | Legitimate vendor billed for $85,000.00 without purchase order. | Tier 3 (CIV) | Enforces strict payee ceiling ($50k) and global limit ($25k). |
+| **Summarization Provenance Laundering**| Launders malicious payload through intermediary agent summaries. | Tier 4 (AuthGraph) | SHA-256 parent hash chaining preserves untrusted origin taint. |
+
+---
+
+## 5. Formal Execution Flow
+
+```
+[Incoming Context]
+       │
+       ▼
+[Task Shield Gating] ──(Divergent / Unprompted)──► [Drop / Quarantine]
+       │ (Admitted)
+       ▼
+[Delta Extraction] ──► [CIV Anchor Verification] ──(Violation)──► [Block & Alert]
+                               │ (Satisfies Invariants)
+                               ▼
+               [AuthGraph Lineage Verification] ──(Broken Lineage)──► [Reject Sink]
+                               │ (Valid Provenance)
+                               ▼
+               [Execution Sink: Ledger Write & Wire]
+```
