@@ -4,6 +4,7 @@ PROJECT_LEDGER.md
 AGENTS.md
 docs/MONITORING_AGENT.md
 everything-claude-code/
+.agents/
 *.log
 logs/
 workspace/
