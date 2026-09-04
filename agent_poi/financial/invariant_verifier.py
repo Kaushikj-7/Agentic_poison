@@ -77,10 +77,7 @@ class InvariantVerifier:
                     violations.append(
                         f"LIMIT BREACH: Amount ${delta.amount:.2f} exceeds global ceiling (${self.anchor.per_transaction_limit:.2f})."
                     )
-                daily_executed = sum(
-                    r.get("amount", 0.0) for r in self.anchor.execution_ledger
-                    if str(r.get("status", "")).startswith("EXECUTED_")
-                )
+                daily_executed = self.anchor.get_recent_daily_disbursements(window_seconds=86400.0)
                 if daily_executed + delta.amount > self.anchor.daily_limit:
                     violations.append(
                         f"LIMIT BREACH: Amount ${delta.amount:.2f} brings daily total (${daily_executed + delta.amount:.2f}) over daily ceiling (${self.anchor.daily_limit:.2f})."

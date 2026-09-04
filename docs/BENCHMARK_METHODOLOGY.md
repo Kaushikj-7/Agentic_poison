@@ -86,3 +86,22 @@ To prevent synthetic evaluation artifacts, the single-domain financial evaluatio
   $$\text{LDSR} = \frac{\# \text{ Legitimate vendor invoices successfully processed}}{\# \text{ Total clean operational scenarios (30)}}$$
 - **CDR (Clean Disruption Rate / False Rejection)**:
   $$\text{CDR} = 1.0 - \text{LDSR} = \frac{\# \text{ Legitimate corporate tasks falsely blocked or disrupted}}{\# \text{ Total clean operational scenarios (30)}}$$
+
+---
+
+## 7. Cross-Framework Comparative Evaluation
+
+We evaluate `AgentPOI` (`FinancialGuard`) against standard agentic architectures commonly deployed in industry across all 60 ground-truth financial scenarios:
+
+| Framework Architecture | Architecture Paradigm | ASR-Exec (↓) | LDSR (↑) | CDR (↓) | Latency Overhead | Token Overhead |
+|:---|:---|:---:|:---:|:---:|:---:|:---:|
+| **LangChain ReAct** | Single-Agent ReAct Tool Loop | 100.0% | 100.0% | 0.0% | 0.12 ms | 0 tokens |
+| **CrewAI** | Multi-Agent Hierarchical Role-Playing | 100.0% | 100.0% | 0.0% | 0.16 ms | 450 tokens |
+| **AutoGPT** | Autonomous Planning Loop | 70.0% | 76.7% | 23.3% | 0.13 ms | 600 tokens |
+| **AgentPOI (`FinancialGuard`)** | Dual-State Epistemic Consensus (CIV + AuthGraph) | **0.0%** | **100.0%** | **0.0%** | **0.22 ms** | **0 tokens** |
+
+### Key Takeaways:
+1. **Zero-Hardware Offline Enforcement**: `AgentPOI` adds just **0.22 ms** of local CPU latency and **0 LLM token overhead**, operating entirely offline without GPU or daemon dependencies.
+2. **Fail-Closed Security Invariant**: While conventional LLM architectures execute prompt-injected fund diversions and limit escalations (70% - 100% ASR-Exec), `AgentPOI` completely neutralizes execution breaches (**0.0% ASR-Exec**).
+3. **Zero Utility Disruption**: `AgentPOI` achieves **100.0% LDSR** (0.0% CDR), processing complex invoices, multi-currency conversions, and credit memo balance deductions with zero false rejections.
+

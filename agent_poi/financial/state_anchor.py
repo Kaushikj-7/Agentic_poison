@@ -158,11 +158,8 @@ class FinancialStateAnchor:
                     f"INVARIANT VIOLATION: Amount ${amount:.2f} exceeds global transaction limit (${self.per_transaction_limit:.2f})."
                 )
 
-            # Invariant 3b: Cumulative daily disbursement ceiling
-            daily_executed = sum(
-                r.get("amount", 0.0) for r in self.execution_ledger
-                if str(r.get("status", "")).startswith("EXECUTED_")
-            )
+            # Invariant 3b: Cumulative daily disbursement ceiling (rolling 24-hour window)
+            daily_executed = self.get_recent_daily_disbursements(window_seconds=86400.0)
             if daily_executed + amount > self.daily_limit:
                 violations.append(
                     f"INVARIANT VIOLATION: Proposed disbursement ${amount:.2f} brings daily cumulative total (${daily_executed + amount:.2f}) over daily ceiling (${self.daily_limit:.2f})."
@@ -180,6 +177,24 @@ class FinancialStateAnchor:
         is_valid = len(violations) == 0
         return is_valid, violations
 
+    def get_recent_daily_disbursements(self, window_seconds: float = 86400.0) -> float:
+        """Calculate cumulative disbursements executed within a rolling 24-hour UTC window."""
+        now_utc = datetime.now(timezone.utc)
+        daily_executed = 0.0
+        for r in self.execution_ledger:
+            if str(r.get("status", "")).startswith("EXECUTED_"):
+                ts_str = r.get("timestamp")
+                if ts_str:
+                    try:
+                        ts = datetime.fromisoformat(ts_str)
+                        if (now_utc - ts).total_seconds() <= window_seconds:
+                            daily_executed += float(r.get("amount", 0.0) or 0.0)
+                    except Exception:
+                        daily_executed += float(r.get("amount", 0.0) or 0.0)
+                else:
+                    daily_executed += float(r.get("amount", 0.0) or 0.0)
+        return daily_executed
+
     def record_disbursement(
         self,
         to_account: str,
@@ -189,10 +204,14 @@ class FinancialStateAnchor:
         reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Append an immutable transaction record to the state anchor ledger."""
+        payee_entry = self.verified_payees.get(
+            to_account,
+            PayeeAccount("UNKNOWN", "Unverified Recipient", to_account, "", "", is_verified=False),
+        )
         record = {
             "transaction_id": f"TXN-{len(self.execution_ledger) + 1:05d}",
             "to_account": to_account,
-            "payee_name": self.verified_payees.get(to_account, PayeeAccount("UNKNOWN", "Unverified Recipient", to_account, "", "")).name,
+            "payee_name": payee_entry.name,
             "amount": amount,
             "invoice_id": invoice_id,
             "status": status,

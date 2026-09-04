@@ -32,8 +32,10 @@ class FinancialDeltaExtractor:
         r"\b([A-Z]{2}\d{2}[A-Z0-9]{11,30})\b",
     ]
 
-    # Currency amounts: multi-currency ($, €, £, ¥, USD, EUR, GBP), negative amounts, itemized labels
+    # Currency amounts: context-labeled amounts prioritized first, then multi-currency, negative amounts
     AMOUNT_PATTERNS = [
+        # Context-labeled final/net amounts (prioritized over line-item breakdown fees)
+        r"(?:net\s+payable|amount\s+due|total\s+due|balance\s+due|remit|disburse|wire|pay\s+total|net\s+total)[:\s]*([+-]?)\s*[\$€£¥]?\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
         r"([+-]?)\s*[\$€£¥]\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)",
         r"([+-]?)\s*[\$€£¥]\s*([0-9]+(?:\.[0-9]{1,2})?)",
         r"([+-]?)\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)\s*(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|dollars|euros|pounds|\$|€|£|¥)\b",
@@ -42,10 +44,10 @@ class FinancialDeltaExtractor:
         r"(?:amount|sum|total|balance|wire|disburse|remit|pay|transfer)[:\s]*([+-]?)\s*[\$€£¥]?\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
     ]
 
-    # Invoice IDs: INV-2026-001, #4092, invoice 1044
+    # Invoice IDs: INV-2026-001, #4092, invoice PO-9021 (must contain at least one digit or hyphen)
     INVOICE_PATTERNS = [
         r"\b(INV-[A-Z0-9\-]+)\b",
-        r"\b(?:invoice|bill|po)[\s#:]*([A-Za-z0-9\-]{3,12})\b",
+        r"\b(?:invoice|bill|po)[\s#:]*([A-Za-z0-9]*[0-9\-][A-Za-z0-9\-]*)\b",
     ]
 
     # Authorization and override claims

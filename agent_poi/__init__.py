@@ -19,6 +19,11 @@ from agent_poi.financial.exceptions import (
 from agent_poi.memory.schema import SourceOrigin
 from agent_poi.core.alignment_gate import TaskShieldGate
 from agent_poi.core.taint_tracker import AuthGraphDAG, AuthGraphNode
+from agent_poi.evaluation.framework_comparison import (
+    FrameworkComparisonRunner,
+    FrameworkBenchmarkResult,
+)
+from agent_poi.research.arxiv_parser import LaTeXParser
 
 __version__ = "1.0.0"
 
@@ -36,6 +41,9 @@ __all__ = [
     "TaskShieldGate",
     "AuthGraphDAG",
     "AuthGraphNode",
+    "FrameworkComparisonRunner",
+    "FrameworkBenchmarkResult",
+    "LaTeXParser",
     "FinancialSecurityError",
     "InvariantViolationError",
     "UnauthorizedPayeeError",
@@ -43,3 +51,4 @@ __all__ = [
     "UntrustedLineageError",
     "ImperativeDivergenceError",
 ]
+
