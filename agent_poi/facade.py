@@ -11,6 +11,14 @@ from typing import Any, Dict, List, Optional
 from agent_poi.financial.financial_agent import FinancialAgent, FinancialTaskResult
 from agent_poi.financial.state_anchor import FinancialStateAnchor, PayeeAccount
 from agent_poi.memory.schema import SourceOrigin
+from agent_poi.financial.exceptions import (
+    FinancialSecurityError,
+    InvariantViolationError,
+    UnauthorizedPayeeError,
+    DisbursementCeilingExceededError,
+    UntrustedLineageError,
+    ImperativeDivergenceError,
+)
 
 
 class SecurityPolicy(str, Enum):
@@ -35,9 +43,18 @@ class GuardVerdict:
     @classmethod
     def from_task_result(cls, res: FinancialTaskResult) -> "GuardVerdict":
         """Convert internal FinancialTaskResult into a clean public GuardVerdict."""
-        status = "APPROVED" if (res.context_admitted and not res.violations) else res.context_decision
+        if res.action_taken == "process_disbursement":
+            is_approved = bool(res.disbursement_executed and not res.is_malicious_divergence and not res.violations)
+        else:
+            is_approved = bool(res.context_admitted and not res.is_malicious_divergence and not res.violations)
+
+        if is_approved:
+            status = "APPROVED"
+        else:
+            status = res.context_decision if res.context_decision in ("BLOCKED", "QUARANTINED") else "BLOCKED"
+
         return cls(
-            is_approved=res.disbursement_executed or (res.context_admitted and not res.is_malicious_divergence),
+            is_approved=is_approved,
             status=status,
             task_id=res.task_id,
             violations=res.violations,
@@ -68,8 +85,10 @@ class FinancialGuard:
         policy: SecurityPolicy = SecurityPolicy.STRICT,
         per_transaction_limit: float = 25000.0,
         daily_limit: float = 100000.0,
+        raise_on_violation: bool = False,
     ):
         self.policy = policy
+        self.raise_on_violation = raise_on_violation
         self.anchor = FinancialStateAnchor(
             per_transaction_limit=per_transaction_limit,
             daily_limit=daily_limit,
@@ -105,12 +124,31 @@ class FinancialGuard:
             node_id=f"root_payee_{payee_id}",
         )
 
+    def _raise_violation_error(self, verdict: GuardVerdict) -> None:
+        """Raise appropriate typed domain exception based on detected violations."""
+        viol_str = " ".join(verdict.violations)
+        if "NOT in verified payee registry" in viol_str:
+            target = next((v.split("'")[1] for v in verdict.violations if "'" in v), "unknown")
+            raise UnauthorizedPayeeError(target_account=target, details={"violations": verdict.violations})
+        if any(keyword in viol_str.lower() for keyword in ["exceeds", "ceiling", "limit"]):
+            raise DisbursementCeilingExceededError(
+                amount=verdict.transaction_record.get("amount", 0.0) if verdict.transaction_record else 0.0,
+                limit=self.anchor.per_transaction_limit,
+                details={"violations": verdict.violations},
+            )
+        if any(keyword in viol_str.lower() for keyword in ["lineage", "ancestry", "untrusted or unauthorized"]):
+            raise UntrustedLineageError(node_id=verdict.task_id, origin="untrusted", details={"violations": verdict.violations})
+        if "directive" in viol_str.lower() or "imperative" in viol_str.lower():
+            raise ImperativeDivergenceError(divergence_score=1.0, threshold=0.35, details={"violations": verdict.violations})
+        raise InvariantViolationError(f"Security invariant violated: {viol_str}", details={"violations": verdict.violations})
+
     def protect(
         self,
         task_query: str,
         context: str,
         task_id: str = "TASK-AUTO",
         origin: SourceOrigin = SourceOrigin.UNTRUSTED_WEB,
+        raise_on_violation: Optional[bool] = None,
     ) -> GuardVerdict:
         """Evaluate an incoming task and retrieved context through all defense tiers."""
         task_result = self.agent.handle_financial_task(
@@ -119,7 +157,13 @@ class FinancialGuard:
             retrieved_context=context,
             context_origin=origin,
         )
-        return GuardVerdict.from_task_result(task_result)
+        verdict = GuardVerdict.from_task_result(task_result)
+
+        should_raise = self.raise_on_violation if raise_on_violation is None else raise_on_violation
+        if should_raise and not verdict.is_approved:
+            self._raise_violation_error(verdict)
+
+        return verdict
 
     def get_audit_ledger(self) -> List[Dict[str, Any]]:
         """Retrieve the immutable execution and audit ledger records."""

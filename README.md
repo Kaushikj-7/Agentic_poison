@@ -80,53 +80,30 @@ print(f"Violations Detected: {verdict.violations}")
 
 ---
 
-## 2. Repository Classification: Public vs. Developer Artifacts
+## 2. Framework Architecture & Clean Abstraction
 
-To maintain clean architectural boundaries and prevent internal developer scaffolding from leaking into consumer applications or public repositories, files in this workspace are strictly classified:
+Following the engineering practices of production agent frameworks (such as Anthropic Claude Code and OpenClaw), AgentPOI cleanly decouples public SDK consumer abstractions from internal verification mechanics:
 
 ```mermaid
 flowchart TD
-    subgraph RepoRoot ["AgentPOI Repository Scope"]
+    ClientApp["Client Application / Autonomous Financial Agent"] -->|"guard.protect(task_query, context)"| FG["FinancialGuard (Public Facade)"]
+    
+    subgraph EncapsulatedEngine ["AgentPOI Encapsulated Security Engine"]
         direction TB
-        subgraph PublicScope ["Public User & Framework Artifacts (Distributed)"]
-            F_Core["agent_poi/\n• facade.py (FinancialGuard)\n• financial/ (Anchor, Verifier, Agent)\n• core/ (TaskShield, AuthGraph, CI)\n• memory/ (Firewall, Schema)\n• eval/ (60-Scenario Benchmark)"]
-            F_Tests["tests/\n• 42 Automated Unit & Integration Tests"]
-            F_Docs["docs/\n• Formal Architecture\n• Mathematical Formulation\n• Benchmark Methodology"]
-            F_Pkg["pyproject.toml / requirements.txt / LICENSE"]
-        end
-
-        subgraph PrivateScope ["Internal Developer & Governance Artifacts (Git-Ignored)"]
-            D_Agents["AGENTS.md (Agent Behavioral Rules & Invariants)"]
-            D_Proj["PROJECT_LEDGER.md (Milestone & Decision Ledger)"]
-            D_Mist["MISTAKES_LEDGER.md (Error Analysis & Post-Mortems)"]
-            D_Mon["docs/MONITORING_AGENT.md (Agent Supervisory Monitor)"]
-            D_ECC["everything-claude-code/ (Private Prompting Templates)"]
-            D_Build[".pytest_cache/ / *.log / logs/ / scratch/"]
-        end
+        FG --> TSGate["1. Task Shield Semantic Gate\nEvaluates imperative divergence score"]
+        FG --> Lineage["2. AuthGraph Cryptographic DAG\nValidates SHA-256 root authority chain"]
+        FG --> Verifier["3. Contextual Invariant Verifier (CIV)\nChecks bounds against Immutable Anchor S₀"]
+        Verifier <--> Anchor[("Immutable State Anchor S₀\n• Verified Payee Registry\n• Per-Payee & Global Ceilings\n• Cumulative Daily Limits")]
     end
 
-    PublicScope -->|"Published via pip / git clone"| ExternalDev["External Programmers & End Users"]
-    PrivateScope -->|".gitignore Protection"| LocalDev["Local Engineering & Agent Governance Only"]
+    FG -->|"GuardVerdict (is_approved, status, violations, ledger)"| ClientApp
+    FG -.->|"Optional: raise_on_violation=True"| Exceptions["Typed Exceptions\n• UnauthorizedPayeeError\n• DisbursementCeilingExceededError\n• UntrustedLineageError"]
 ```
 
-### Detailed File Classification Table
-
-| Category | File / Path | Purpose & Target Audience | Git Tracking Status |
-| :--- | :--- | :--- | :--- |
-| **Public Framework** | `agent_poi/facade.py` | Primary public facade (`FinancialGuard`, `SecurityPolicy`, `GuardVerdict`) | **Tracked in Git** |
-| **Public Framework** | `agent_poi/financial/` | Financial state anchor $\mathcal{S}_0$, invariant verifier, delta extractor | **Tracked in Git** |
-| **Public Framework** | `agent_poi/core/` | Epistemic primitives: `TaskShieldGate`, `AuthGraphDAG`, `CIDecomposer` | **Tracked in Git** |
-| **Public Framework** | `agent_poi/financial/eval/` | 60-scenario ground-truth financial evaluation benchmark | **Tracked in Git** |
-| **Public Tests** | `tests/` | 42 offline unit tests validating all security guarantees | **Tracked in Git** |
-| **Public Docs** | `docs/ARCHITECTURE.md` | Formal 5-tier architecture & data flow diagrams | **Tracked in Git** |
-| **Public Docs** | `docs/MATHEMATICAL_FORMULATION.md`| Theoretical proofs and invariant equations | **Tracked in Git** |
-| **Public Packaging** | `pyproject.toml`, `LICENSE` | Standard packaging configuration and MIT license | **Tracked in Git** |
-| **Developer Internal** | `AGENTS.md` | Agent persona behavioral rules, TDD invariants | **Strictly Ignored (`.gitignore`)** |
-| **Developer Internal** | `PROJECT_LEDGER.md` | Internal milestone log & architectural decisions (DEC-xxx) | **Strictly Ignored (`.gitignore`)** |
-| **Developer Internal** | `MISTAKES_LEDGER.md` | Developer post-mortem log of failed approaches | **Strictly Ignored (`.gitignore`)** |
-| **Developer Internal** | `docs/MONITORING_AGENT.md` | Internal supervisory agent orchestration monitor | **Strictly Ignored (`.gitignore`)** |
-| **Developer Internal** | `everything-claude-code/` | Internal workflow methodologies & prompt templates | **Strictly Ignored (`.gitignore`)** |
-| **Developer Scratch** | `logs/`, `scratch/`, `.pytest_cache` | Local run logs, scratch files, byte-compiled files | **Strictly Ignored (`.gitignore`)** |
+### Clean Abstraction Guarantees
+- **Simple, Intuitive Entrypoint:** Engineers interact with `FinancialGuard`, passing queries and context. Complex math, DAG chaining, and regex parsing are fully encapsulated.
+- **Fail-Closed Default:** Transactions that violate verified limits or untrusted origins are quarantined or blocked with detailed invariant violation diagnostics.
+- **Developer Scaffolding Isolation:** Contributor governance rules, agent ledgers, and private workflows are strictly isolated from the distributed package via `.gitignore`. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for full file classification.
 
 ---
 
@@ -227,10 +204,10 @@ flowchart LR
 
 ## 5. Verification & Testing
 
-AgentPOI is built with a zero-hardware offline requirement. All 42 automated tests and dynamic benchmark runners execute 100% locally on standard CPU without requiring GPUs or external network calls.
+AgentPOI is built with a zero-hardware offline requirement. All 47 automated tests and dynamic benchmark runners execute 100% locally on standard CPU without requiring GPUs or external network calls.
 
 ```bash
-# Run unit test suite (42 tests)
+# Run unit test suite (47 tests)
 pytest tests/ -v
 
 # Run 60-scenario dynamic financial benchmark runner
@@ -242,12 +219,13 @@ python scripts/ci_check.py
 
 ---
 
-## 6. Scientific Documentation
+## 6. Scientific Documentation & Developer Guidelines
 
 - [System Architecture Specification](docs/ARCHITECTURE.md): Full component diagrams, data flow schemas, and threat models.
 - [Mathematical Formulation & Invariant Proofs](docs/MATHEMATICAL_FORMULATION.md): Theoretical definitions, epistemic consensus theorems, and proof sketches.
 - [Benchmark Methodology & Evaluation Standards](docs/BENCHMARK_METHODOLOGY.md): Scenario taxonomy, metrics formulation, and ablation matrices.
 - [Literature Survey & Theoretical Grounding](docs/SURVEY_AND_PAPERS.md): Comparative analysis with AgentDojo, InjecAgent, and DataSentinel.
+- [Developer & File Classification Guide](docs/DEVELOPMENT.md): Boundary taxonomy between public SDK packages and internal governance scaffolding.
 
 ---
 

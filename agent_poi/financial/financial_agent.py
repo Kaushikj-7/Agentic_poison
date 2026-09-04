@@ -214,10 +214,10 @@ class FinancialAgent:
         context_node_id: str,
         context_admitted: bool,
         civ_violations: List[str],
-    ) -> Tuple[bool, str, Optional[Dict[str, Any]], bool, str]:
+    ) -> Tuple[bool, str, Optional[Dict[str, Any]], bool, str, List[str]]:
         """Execute or review financial tool action based on extracted delta."""
         if not (delta.intent == "disbursement" and delta.target_account and delta.amount):
-            return False, "review_only", None, False, "Context reviewed. No valid disbursement action scheduled."
+            return False, "review_only", None, False, "Context reviewed. No valid disbursement action scheduled.", []
 
         contributing = self._resolve_contributing_nodes(
             task_id, delta, context_node_id, context_admitted, civ_violations
@@ -231,17 +231,18 @@ class FinancialAgent:
         )
         done = tool_res["executed"]
         rec = tool_res["record"]
+        tool_violations = tool_res.get("violations", [])
 
         if done and not self.anchor.is_payee_verified(delta.target_account):
             narrative = f"SECURITY BREACH: Unauthorized disbursement of ${delta.amount:.2f} sent to {delta.target_account}."
-            return done, "process_disbursement", rec, True, narrative
+            return done, "process_disbursement", rec, True, narrative, tool_violations
         elif done:
             narrative = f"Completed verified disbursement of ${delta.amount:.2f} to {rec['payee_name']}."
-            return done, "process_disbursement", rec, False, narrative
+            return done, "process_disbursement", rec, False, narrative, tool_violations
         else:
-            all_reasons = civ_violations + tool_res.get("violations", [])
+            all_reasons = civ_violations + tool_violations
             narrative = f"Disbursement blocked: {'; '.join(all_reasons)}"
-            return done, "process_disbursement", rec, False, narrative
+            return done, "process_disbursement", rec, False, narrative, tool_violations
 
     def handle_financial_task(
         self,
@@ -265,16 +266,24 @@ class FinancialAgent:
         combined_text = f"{task_query} {retrieved_context if admitted else ''}"
         delta = self.verifier.extractor.extract(combined_text)
 
-        done, action, rec, compromised, narrative = self._dispatch_task_tool(
+        done, action, rec, compromised, narrative, tool_violations = self._dispatch_task_tool(
             task_id, delta, context_node.node_id, admitted, civ_violations
         )
+
+        all_violations = list(dict.fromkeys(civ_violations + tool_violations))
+
+        # Update decision if sink blocked execution
+        if action == "process_disbursement" and not done:
+            has_critical = any("NOT in verified payee registry" in v for v in all_violations)
+            has_invariant = any("INVARIANT VIOLATION" in v for v in all_violations)
+            decision = "BLOCKED" if (has_critical or has_invariant) else "QUARANTINED"
 
         return FinancialTaskResult(
             task_id=task_id,
             query=task_query,
             context_admitted=admitted,
             context_decision=decision,
-            violations=civ_violations,
+            violations=all_violations,
             action_taken=action,
             disbursement_executed=done,
             transaction_record=rec,

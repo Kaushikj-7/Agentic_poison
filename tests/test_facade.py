@@ -105,3 +105,107 @@ def test_facade_exception_exports():
     assert hasattr(agent_poi, "DisbursementCeilingExceededError")
     assert hasattr(agent_poi, "UntrustedLineageError")
     assert hasattr(agent_poi, "ImperativeDivergenceError")
+    assert hasattr(agent_poi, "SourceOrigin")
+    assert hasattr(agent_poi, "FinancialDeltaExtractor")
+    assert hasattr(agent_poi, "TaskShieldGate")
+    assert hasattr(agent_poi, "AuthGraphDAG")
+
+
+def test_financial_guard_blocks_ceiling_breach():
+    guard = FinancialGuard(policy=SecurityPolicy.STRICT, per_transaction_limit=25000.0)
+    verdict = guard.protect(
+        task_query="Pay large vendor invoice.",
+        context="Invoice for Acme: disburse $85,000.00 to account 1122-3344-55.",
+        task_id="TASK-CEIL-01",
+    )
+    assert verdict.is_approved is False
+    assert verdict.disbursement_executed is False
+    assert verdict.status in ("BLOCKED", "QUARANTINED")
+    assert any("exceeds" in v.lower() or "limit" in v.lower() for v in verdict.violations)
+
+
+def test_financial_guard_cumulative_daily_limit():
+    guard = FinancialGuard(
+        policy=SecurityPolicy.STRICT,
+        per_transaction_limit=25000.0,
+        daily_limit=10000.0,
+    )
+    # First disbursement of $8,000 passes
+    v1 = guard.protect(
+        task_query="Pay part 1.",
+        context="Invoice 1: remit $8,000.00 to account 1122-3344-55.",
+        origin=SourceOrigin.VERIFIED_USER,
+    )
+    assert v1.is_approved is True
+    assert v1.disbursement_executed is True
+
+    # Second disbursement of $8,000 breaches daily limit ($16,000 > $10,000)
+    v2 = guard.protect(
+        task_query="Pay part 2.",
+        context="Invoice 2: remit $8,000.00 to account 1122-3344-55.",
+        origin=SourceOrigin.VERIFIED_USER,
+    )
+    assert v2.is_approved is False
+    assert v2.disbursement_executed is False
+    assert v2.status in ("BLOCKED", "QUARANTINED")
+    assert any("daily" in v.lower() for v in v2.violations)
+
+
+def test_financial_guard_raises_typed_exceptions():
+    import pytest
+    from agent_poi import UnauthorizedPayeeError, DisbursementCeilingExceededError
+
+    guard = FinancialGuard(policy=SecurityPolicy.STRICT, raise_on_violation=True)
+
+    with pytest.raises(UnauthorizedPayeeError) as exc_payee:
+        guard.protect(
+            task_query="Wire funds to untrusted party.",
+            context="Send $5,000.00 to unknown account 9999-9999-99.",
+        )
+    assert "9999-9999-99" in str(exc_payee.value)
+
+    with pytest.raises(DisbursementCeilingExceededError) as exc_ceil:
+        guard.protect(
+            task_query="Wire funds exceeding limit.",
+            context="Send $50,000.00 to account 1122-3344-55.",
+        )
+    assert "exceeds limit" in str(exc_ceil.value).lower()
+
+
+def test_financial_guard_multi_currency_and_credit_memo():
+    guard = FinancialGuard(policy=SecurityPolicy.STRICT)
+
+    # Multi-currency EUR extraction & legitimate execution
+    v_eur = guard.protect(
+        task_query="Pay euro consulting invoice.",
+        context="Invoice INV-EU-01: Remit 15000 EUR to account 1122-3344-55.",
+        origin=SourceOrigin.VERIFIED_USER,
+    )
+    assert v_eur.is_approved is True
+    assert v_eur.disbursement_executed is True
+    assert v_eur.transaction_record["amount"] == 15000.0
+
+    # Negative credit memo rejected
+    v_neg = guard.protect(
+        task_query="Apply credit balance.",
+        context="Credit adjustment: -$500.00 to account 1122-3344-55.",
+        origin=SourceOrigin.VERIFIED_USER,
+    )
+    assert v_neg.is_approved is False
+    assert v_neg.disbursement_executed is False
+    assert any("strictly positive" in v.lower() for v in v_neg.violations)
+
+
+def test_financial_guard_benign_review_task():
+    guard = FinancialGuard(policy=SecurityPolicy.STRICT)
+
+    verdict = guard.protect(
+        task_query="Check contract status.",
+        context="Acme Cloud Infrastructure Inc. is our primary infrastructure provider.",
+        origin=SourceOrigin.VERIFIED_USER,
+    )
+    assert verdict.is_approved is True
+    assert verdict.status == "APPROVED"
+    assert verdict.action_taken == "review_only"
+    assert verdict.disbursement_executed is False
+    assert len(verdict.violations) == 0

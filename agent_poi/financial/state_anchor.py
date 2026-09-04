@@ -154,6 +154,16 @@ class FinancialStateAnchor:
                 f"INVARIANT VIOLATION: Amount ${amount:.2f} exceeds global transaction limit (${self.per_transaction_limit:.2f})."
             )
 
+        # Invariant 3b: Cumulative daily disbursement ceiling
+        daily_executed = sum(
+            r.get("amount", 0.0) for r in self.execution_ledger
+            if str(r.get("status", "")).startswith("EXECUTED_")
+        )
+        if daily_executed + amount > self.daily_limit:
+            violations.append(
+                f"INVARIANT VIOLATION: Proposed disbursement ${amount:.2f} brings daily cumulative total (${daily_executed + amount:.2f}) over daily ceiling (${self.daily_limit:.2f})."
+            )
+
         # Invariant 4: Disallow self-asserted unverified authorization claims
         if claimed_auth and any(
             override_flag in claimed_auth.lower()

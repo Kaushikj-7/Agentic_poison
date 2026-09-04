@@ -24,20 +24,22 @@ class ContextualFinancialDelta:
 class FinancialDeltaExtractor:
     """Parses text to extract implied financial state mutations."""
 
-    # Account patterns: standard 4-group hyphenated (e.g. 1122-3344-55) or 10-12 digit string
+    # Account patterns: standard 4-group hyphenated (e.g. 1122-3344-55), IBAN, or 10-12 digit string
     ACCOUNT_PATTERNS = [
         r"\b(\d{4}-\d{4}-\d{2,4})\b",
-        r"\b(?:account|acct|iban|routing)[:\s#]+([A-Z0-9\-]{8,20})\b",
+        r"\b(?:account|acct|iban|routing|payee|recipient|to)[:\s#]+([A-Z0-9\-]{8,24})\b",
         r"\baccount\s+([0-9\-]{8,15})\b",
+        r"\b([A-Z]{2}\d{2}[A-Z0-9]{11,30})\b",
     ]
 
-    # Currency amounts: $12,500.00, $95000, 5000 USD, $500
+    # Currency amounts: multi-currency ($, €, £, ¥, USD, EUR, GBP), negative amounts, itemized labels
     AMOUNT_PATTERNS = [
-        r"\$\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)",
-        r"\$\s*([0-9]+(?:\.[0-9]{1,2})?)",
-        r"([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)\s*(?:USD|dollars|\$)",
-        r"([0-9]+(?:\.[0-9]{1,2})?)\s*(?:USD|dollars|\$)",
-        r"(?:amount|sum|total)[:\s]*\$?\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
+        r"([+-]?)\s*[\$€£¥]\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)",
+        r"([+-]?)\s*[\$€£¥]\s*([0-9]+(?:\.[0-9]{1,2})?)",
+        r"([+-]?)\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?)\s*(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|dollars|euros|pounds|\$|€|£|¥)\b",
+        r"([+-]?)\s*([0-9]+(?:\.[0-9]{1,2})?)\s*(?:USD|EUR|GBP|JPY|CAD|AUD|CHF|dollars|euros|pounds|\$|€|£|¥)\b",
+        r"\b(?:USD|EUR|GBP|JPY|CAD|AUD|CHF)\s*([+-]?)\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
+        r"(?:amount|sum|total|balance|wire|disburse|remit|pay|transfer)[:\s]*([+-]?)\s*[\$€£¥]?\s*([0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)",
     ]
 
     # Invoice IDs: INV-2026-001, #4092, invoice 1044
@@ -48,8 +50,8 @@ class FinancialDeltaExtractor:
 
     # Authorization and override claims
     AUTHORITY_PATTERNS = [
-        r"(?:admin|director|manager|board|controller)\s+(?:has\s+)?(?:pre-?approved|authorized|confirmed|granted|permitted)",
-        r"(?:policy|security|compliance|system)\s+(?:override|bypass|exception)",
+        r"(?:admin|director|manager|board|controller|cfo|ceo|coo|cio|vp|auditor)\s+(?:has\s+)?(?:pre-?approved|authorized|confirmed|granted|permitted)",
+        r"(?:policy|security|compliance|system|audit)\s+(?:override|bypass|exception|waiver)",
         r"(?:mandatory|emergency|immediate)\s+(?:wire|disbursement|transfer|payment)",
         r"(?:verbal\s+agreement|special\s+dispensation|out-?of-?band\s+clearance)",
     ]
@@ -66,17 +68,21 @@ class FinancialDeltaExtractor:
                 target_account = match.group(1).strip()
                 break
 
-        # 2. Extract Amount
+        # 2. Extract Amount (with multi-currency and sign support)
         amount = None
         for pat in self.AMOUNT_PATTERNS:
             match = re.search(pat, text, flags=re.IGNORECASE)
             if match:
-                raw_amt = match.group(1).replace(",", "")
-                try:
-                    amount = float(raw_amt)
-                    break
-                except ValueError:
-                    continue
+                groups = match.groups()
+                sign = -1.0 if any(g == "-" for g in groups) else 1.0
+                num_str = next((g for g in reversed(groups) if g and any(c.isdigit() for c in g)), None)
+                if num_str:
+                    raw_amt = num_str.replace(",", "")
+                    try:
+                        amount = sign * float(raw_amt)
+                        break
+                    except ValueError:
+                        continue
 
         # 3. Extract Invoice ID
         invoice_id = None
