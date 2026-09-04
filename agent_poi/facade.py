@@ -107,7 +107,10 @@ class FinancialGuard:
         max_single_disbursement: float = 25000.0,
     ) -> None:
         """Register a pre-approved vendor payee in the immutable state anchor."""
-        payee_id = f"PAYEE-{len(self.anchor.verified_payees) + 1:02d}"
+        if account_number in self.anchor.verified_payees:
+            payee_id = self.anchor.verified_payees[account_number].payee_id
+        else:
+            payee_id = f"PAYEE-{len(self.anchor.verified_payees) + 1:02d}"
         self.anchor.verified_payees[account_number] = PayeeAccount(
             payee_id=payee_id,
             name=name,
@@ -126,7 +129,7 @@ class FinancialGuard:
 
     def _raise_violation_error(self, verdict: GuardVerdict) -> None:
         """Raise appropriate typed domain exception based on detected violations."""
-        viol_str = " ".join(verdict.violations)
+        viol_str = " ".join(verdict.violations) if verdict.violations else ""
         if "NOT in verified payee registry" in viol_str:
             target = next((v.split("'")[1] for v in verdict.violations if "'" in v), "unknown")
             raise UnauthorizedPayeeError(target_account=target, details={"violations": verdict.violations})
@@ -140,7 +143,12 @@ class FinancialGuard:
             raise UntrustedLineageError(node_id=verdict.task_id, origin="untrusted", details={"violations": verdict.violations})
         if "directive" in viol_str.lower() or "imperative" in viol_str.lower():
             raise ImperativeDivergenceError(divergence_score=1.0, threshold=0.35, details={"violations": verdict.violations})
-        raise InvariantViolationError(f"Security invariant violated: {viol_str}", details={"violations": verdict.violations})
+        msg = (
+            f"Security invariant violated: {viol_str}"
+            if viol_str
+            else f"Security policy rejected task '{verdict.task_id}' (status: {verdict.status})"
+        )
+        raise InvariantViolationError(msg, details={"violations": verdict.violations})
 
     def protect(
         self,
@@ -151,6 +159,8 @@ class FinancialGuard:
         raise_on_violation: Optional[bool] = None,
     ) -> GuardVerdict:
         """Evaluate an incoming task and retrieved context through all defense tiers."""
+        task_query = str(task_query or "")
+        context = str(context or "")
         task_result = self.agent.handle_financial_task(
             task_id=task_id,
             task_query=task_query,

@@ -21,6 +21,13 @@ def test_financial_guard_clean_task():
     assert verdict.transaction_record["to_account"] == "1122-3344-55"
     assert verdict.provenance_hash is not None
 
+    # Verify empty string and None inputs do not raise AttributeError
+    v_empty = guard.protect("", "")
+    assert isinstance(v_empty, GuardVerdict)
+
+    v_none = guard.protect(None, None)
+    assert isinstance(v_none, GuardVerdict)
+
 
 def test_financial_guard_blocks_adversarial_injection():
     guard = FinancialGuard(policy=SecurityPolicy.STRICT)

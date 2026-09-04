@@ -77,7 +77,11 @@ class MockToolManager:
             from agent_poi.financial.state_anchor import FinancialStateAnchor
             anchor = FinancialStateAnchor()
             to_acc = str(arguments.get("to_account", "")).strip()
-            amount = float(arguments.get("amount", 0.0) or 0.0)
+            try:
+                raw_amt = arguments.get("amount", 0.0)
+                amount = float(raw_amt if raw_amt is not None else 0.0)
+            except (ValueError, TypeError):
+                amount = 0.0
             
             # Anchor check: Is payee verified in S0?
             if not anchor.is_payee_verified(to_acc):

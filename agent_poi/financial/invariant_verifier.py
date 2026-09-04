@@ -4,6 +4,7 @@ Evaluates extracted financial deltas Delta(c) against the Immutable State Anchor
 Guarantees that passive text cannot mutate financial state invariants without verified consensus.
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 from agent_poi.financial.state_anchor import FinancialStateAnchor
@@ -32,6 +33,7 @@ class InvariantVerifier:
 
     def verify_text(self, text: str) -> InvariantVerificationResult:
         """Extract delta from text and verify against immutable state invariants."""
+        text = str(text or "")
         delta = self.extractor.extract(text)
         return self.verify_delta(delta)
 
@@ -61,24 +63,34 @@ class InvariantVerifier:
                 verified_name = payee.name
 
         if delta.amount is not None:
-            if delta.amount > self.anchor.per_transaction_limit:
-                violations.append(
-                    f"LIMIT BREACH: Amount ${delta.amount:.2f} exceeds global ceiling (${self.anchor.per_transaction_limit:.2f})."
-                )
-            daily_executed = sum(
-                r.get("amount", 0.0) for r in self.anchor.execution_ledger
-                if str(r.get("status", "")).startswith("EXECUTED_")
+            is_valid_num = (
+                isinstance(delta.amount, (int, float))
+                and not isinstance(delta.amount, bool)
+                and not math.isnan(delta.amount)
+                and not math.isinf(delta.amount)
+                and delta.amount > 0
             )
-            if daily_executed + delta.amount > self.anchor.daily_limit:
-                violations.append(
-                    f"LIMIT BREACH: Amount ${delta.amount:.2f} brings daily total (${daily_executed + delta.amount:.2f}) over daily ceiling (${self.anchor.daily_limit:.2f})."
-                )
-            if delta.target_account and self.anchor.is_payee_verified(delta.target_account):
-                payee = self.anchor.get_payee(delta.target_account)
-                if delta.amount > payee.max_single_disbursement:
+            if not is_valid_num:
+                violations.append("LIMIT BREACH: Amount is not a valid positive finite number.")
+            else:
+                if delta.amount > self.anchor.per_transaction_limit:
                     violations.append(
-                        f"LIMIT BREACH: Amount ${delta.amount:.2f} exceeds '{payee.name}' single limit (${payee.max_single_disbursement:.2f})."
+                        f"LIMIT BREACH: Amount ${delta.amount:.2f} exceeds global ceiling (${self.anchor.per_transaction_limit:.2f})."
                     )
+                daily_executed = sum(
+                    r.get("amount", 0.0) for r in self.anchor.execution_ledger
+                    if str(r.get("status", "")).startswith("EXECUTED_")
+                )
+                if daily_executed + delta.amount > self.anchor.daily_limit:
+                    violations.append(
+                        f"LIMIT BREACH: Amount ${delta.amount:.2f} brings daily total (${daily_executed + delta.amount:.2f}) over daily ceiling (${self.anchor.daily_limit:.2f})."
+                    )
+                if delta.target_account and self.anchor.is_payee_verified(delta.target_account):
+                    payee = self.anchor.get_payee(delta.target_account)
+                    if delta.amount > payee.max_single_disbursement:
+                        violations.append(
+                            f"LIMIT BREACH: Amount ${delta.amount:.2f} exceeds '{payee.name}' single limit (${payee.max_single_disbursement:.2f})."
+                        )
 
         return violations, verified_name
 

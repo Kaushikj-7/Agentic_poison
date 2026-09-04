@@ -104,6 +104,29 @@ def test_disbursement_boundary_and_nan_rejection():
     assert valid_nan is False
     assert len(vio_nan) > 0
 
+    # Non-numeric, boolean, None, and infinite amounts must reject cleanly without TypeError
+    valid_str, vio_str = anchor.validate_disbursement("1122-3344-55", "5000")
+    assert valid_str is False
+    assert any("valid finite number" in v for v in vio_str)
+
+    valid_none, vio_none = anchor.validate_disbursement("1122-3344-55", None)
+    assert valid_none is False
+    assert any("valid finite number" in v for v in vio_none)
+
+    valid_bool, vio_bool = anchor.validate_disbursement("1122-3344-55", True)
+    assert valid_bool is False
+    assert any("valid finite number" in v for v in vio_bool)
+
+    valid_inf, vio_inf = anchor.validate_disbursement("1122-3344-55", float("inf"))
+    assert valid_inf is False
+    assert any("valid finite number" in v for v in vio_inf)
+
+    # Process disbursement must handle non-numeric without crashing
+    agent = FinancialAgent(state_anchor=anchor)
+    res_str = agent.process_disbursement("1122-3344-55", "invalid", "INV-BAD")
+    assert res_str["success"] is False
+    assert res_str["executed"] is False
+
 
 def test_process_disbursement_rejects_missing_provenance():
     agent = FinancialAgent(enable_civ_firewall=True)

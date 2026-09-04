@@ -58,6 +58,8 @@ class FinancialDeltaExtractor:
 
     def extract(self, text: str) -> ContextualFinancialDelta:
         """Parse raw text into a structured ContextualFinancialDelta."""
+        if not isinstance(text, str):
+            text = str(text or "")
         text_lower = text.lower()
 
         # 1. Extract Target Account
@@ -103,7 +105,7 @@ class FinancialDeltaExtractor:
                 break
 
         # 5. Inferred Intent
-        if target_account or amount:
+        if target_account is not None or amount is not None:
             intent = "disbursement"
         elif invoice_id:
             intent = "invoice_processing"

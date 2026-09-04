@@ -4,6 +4,7 @@ Coordinates financial task execution, Task Shield retrieval gating,
 AuthGraph cryptographic provenance verification, and safe disbursement tool execution.
 """
 
+import math
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from agent_poi.financial.state_anchor import FinancialStateAnchor
@@ -91,10 +92,18 @@ class FinancialAgent:
 
         return is_valid, violations
 
+    def _format_amount(self, amount: Any) -> str:
+        """Safely format amount as currency string, handling non-numeric or special floats."""
+        is_num = isinstance(amount, (int, float)) and not isinstance(amount, bool)
+        if is_num and not (math.isnan(amount) or math.isinf(amount)):
+            return f"${amount:.2f}"
+        return f"'{amount}'"
+
     def _handle_blocked_disbursement(
         self, to_account: str, amount: float, invoice_id: str, violations: List[str]
     ) -> Dict[str, Any]:
         """Record and log an invariant-blocked disbursement attempt."""
+        amt_str = self._format_amount(amount)
         record = self.anchor.record_disbursement(
             to_account=to_account,
             amount=amount,
@@ -105,7 +114,7 @@ class FinancialAgent:
         log_audit_event(
             self.logger,
             "DISBURSEMENT_BLOCKED",
-            f"Rejected ${amount:.2f} to {to_account}: {'; '.join(violations)}",
+            f"Rejected {amt_str} to {to_account}: {'; '.join(violations)}",
             {"violations": violations, "account": to_account, "amount": amount},
         )
         return {
@@ -120,6 +129,7 @@ class FinancialAgent:
         self, to_account: str, amount: float, invoice_id: str
     ) -> Dict[str, Any]:
         """Record and log an authorized (or baseline undefended) disbursement execution."""
+        amt_str = self._format_amount(amount)
         status = "EXECUTED_BENIGN" if self.anchor.is_payee_verified(to_account) else "EXECUTED_MALICIOUS_HIJACK"
         record = self.anchor.record_disbursement(
             to_account=to_account,
@@ -131,13 +141,13 @@ class FinancialAgent:
         log_audit_event(
             self.logger,
             "DISBURSEMENT_SUCCESS" if status == "EXECUTED_BENIGN" else "DISBURSEMENT_HIJACK_BASELINE",
-            f"Executed ${amount:.2f} to {to_account} (status: {status})",
+            f"Executed {amt_str} to {to_account} (status: {status})",
             {"account": to_account, "amount": amount, "status": status},
         )
         return {
             "success": True,
             "executed": True,
-            "message": f"Successfully processed disbursement of ${amount:.2f} to {to_account}.",
+            "message": f"Successfully processed disbursement of {amt_str} to {to_account}.",
             "record": record,
         }
 
@@ -252,6 +262,8 @@ class FinancialAgent:
         context_origin: SourceOrigin = SourceOrigin.UNTRUSTED_WEB,
     ) -> FinancialTaskResult:
         """Process incoming financial instruction conditioned on retrieved memory/context."""
+        task_query = str(task_query or "")
+        retrieved_context = str(retrieved_context or "")
         context_node = self.auth_graph.add_node(
             content=retrieved_context,
             origin=context_origin,

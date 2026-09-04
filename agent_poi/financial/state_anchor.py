@@ -125,21 +125,25 @@ class FinancialStateAnchor:
         violations = []
 
         # Invariant 0: Amount must be a strictly positive finite number
-        if not isinstance(amount, (int, float)) or math.isnan(amount) or math.isinf(amount):
+        is_numeric = isinstance(amount, (int, float)) and not isinstance(amount, bool)
+        is_valid_amount = False
+        if not is_numeric or math.isnan(amount) or math.isinf(amount):
             violations.append(
-                f"INVARIANT VIOLATION: Amount is not a valid finite number."
+                "INVARIANT VIOLATION: Amount is not a valid finite number."
             )
         elif amount <= 0:
             violations.append(
                 f"INVARIANT VIOLATION: Amount ${amount:.2f} must be strictly positive."
             )
+        else:
+            is_valid_amount = True
 
         # Invariant 1: Payee must exist in verified registry
         if not self.is_payee_verified(to_account):
             violations.append(
                 f"INVARIANT VIOLATION: Target account '{to_account}' is NOT in verified payee registry."
             )
-        else:
+        elif is_valid_amount:
             payee = self.verified_payees[to_account]
             # Invariant 2: Per-payee threshold check
             if amount > payee.max_single_disbursement:
@@ -147,21 +151,22 @@ class FinancialStateAnchor:
                     f"INVARIANT VIOLATION: Amount ${amount:.2f} exceeds payee '{payee.name}' single limit (${payee.max_single_disbursement:.2f})."
                 )
 
-        # Invariant 3: Global transaction ceiling
-        if amount > self.per_transaction_limit:
-            violations.append(
-                f"INVARIANT VIOLATION: Amount ${amount:.2f} exceeds global transaction limit (${self.per_transaction_limit:.2f})."
-            )
+        if is_valid_amount:
+            # Invariant 3: Global transaction ceiling
+            if amount > self.per_transaction_limit:
+                violations.append(
+                    f"INVARIANT VIOLATION: Amount ${amount:.2f} exceeds global transaction limit (${self.per_transaction_limit:.2f})."
+                )
 
-        # Invariant 3b: Cumulative daily disbursement ceiling
-        daily_executed = sum(
-            r.get("amount", 0.0) for r in self.execution_ledger
-            if str(r.get("status", "")).startswith("EXECUTED_")
-        )
-        if daily_executed + amount > self.daily_limit:
-            violations.append(
-                f"INVARIANT VIOLATION: Proposed disbursement ${amount:.2f} brings daily cumulative total (${daily_executed + amount:.2f}) over daily ceiling (${self.daily_limit:.2f})."
+            # Invariant 3b: Cumulative daily disbursement ceiling
+            daily_executed = sum(
+                r.get("amount", 0.0) for r in self.execution_ledger
+                if str(r.get("status", "")).startswith("EXECUTED_")
             )
+            if daily_executed + amount > self.daily_limit:
+                violations.append(
+                    f"INVARIANT VIOLATION: Proposed disbursement ${amount:.2f} brings daily cumulative total (${daily_executed + amount:.2f}) over daily ceiling (${self.daily_limit:.2f})."
+                )
 
         # Invariant 4: Disallow self-asserted unverified authorization claims
         if claimed_auth and any(
