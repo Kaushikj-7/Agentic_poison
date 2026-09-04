@@ -1,0 +1,11 @@
+\section{Related Work}
+\label{sec:related_work}
+
+\subsection{Indirect Prompt Injection & Tool Hijacking}
+Indirect Prompt Injection was formalized by Greshake et al. (2023) and subsequently benchmarked by Debenedetti et al. (AgentDojo~\cite{debenedetti2024agentdojo}) and Zou et al. (InjecAgent~\cite{zou2024injecagent}). While these works establish the acute vulnerability of ReAct agents in banking tools, they primarily highlight attacks rather than offering deterministic execution guards.
+
+\subsection{Context Filtering & Linguistic Decomposition}
+Task Shield~\cite{taskshield2025} pioneered fact-vs-imperative decomposition to sanitize retrieval contexts. While effective for general informational queries, financial documents frequently contain imperative payment instructions (e.g., \textit{``Remit net total to account...''}) that cause naive filters to false-positive. AgentPOI extends this by pairing linguistic pre-filtering with contextual delta extraction and state anchors.
+
+\subsection{Cryptographic Provenance & Memory Firewalls}
+AuthGraph~\cite{authgraph2026} introduced cryptographic DAGs to track parent-child provenance in agent reasoning. DataSentinel~\cite{datasentinel2026} formulated minimax memory firewalls for stateful agents. AgentPOI bridges these theoretical models with enterprise financial accounting, directly coupling cryptographic node hashes to double-entry ledger state transitions and 24-hour rolling balance conservation.

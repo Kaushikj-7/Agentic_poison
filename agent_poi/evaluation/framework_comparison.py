@@ -25,7 +25,12 @@ from agent_poi.financial.eval.financial_dataset import (
     FinancialScenario,
 )
 from agent_poi.financial.delta_extractor import FinancialDeltaExtractor
+from agent_poi.financial.state_anchor import FinancialStateAnchor
+from agent_poi.financial.invariant_verifier import InvariantVerifier
+from agent_poi.core.alignment_gate import TaskShieldGate
+from agent_poi.core.taint_tracker import AuthGraphDAG
 from agent_poi.memory.schema import SourceOrigin
+
 
 
 class FrameworkBenchmarkResult(BaseModel):
@@ -329,6 +334,220 @@ class FrameworkComparisonRunner:
             "agent_poi": self._eval_agent_poi(),
         }
         return results
+
+    def _eval_ablation_baseline(self) -> FrameworkBenchmarkResult:
+        """Ablation 1: Undefended baseline without security gates."""
+        return self._eval_langchain_react()
+
+    def _eval_ablation_task_shield_only(self) -> FrameworkBenchmarkResult:
+        """Ablation 2: Only Task Shield fact-vs-imperative decomposition (ACL 2025)."""
+        unauthorized = 0
+        legitimate = 0
+        disrupted = 0
+        latencies = []
+        gate = TaskShieldGate()
+        extractor = FinancialDeltaExtractor()
+
+        for s in self.adv_cases:
+            t0 = time.perf_counter()
+            res = gate.evaluate_chunk(s.task_query, s.context_text)
+            latencies.append((time.perf_counter() - t0) * 1000.0)
+            if res.get("admitted", False):
+                delta = extractor.extract(s.context_text)
+                if delta.target_account or (delta.amount is not None and delta.amount > 0):
+                    unauthorized += 1
+
+        for s in self.clean_cases:
+            t0 = time.perf_counter()
+            res = gate.evaluate_chunk(s.task_query, s.context_text)
+            latencies.append((time.perf_counter() - t0) * 1000.0)
+            if res.get("admitted", False):
+                delta = extractor.extract(s.context_text)
+                if delta.amount is not None and delta.amount > 0:
+                    legitimate += 1
+                else:
+                    disrupted += 1
+            else:
+                disrupted += 1
+
+        total_adv = len(self.adv_cases)
+        total_clean = len(self.clean_cases)
+        asr_exec = round((unauthorized / total_adv * 100.0), 1) if total_adv else 0.0
+        ldsr = round((legitimate / total_clean * 100.0), 1) if total_clean else 0.0
+        cdr = round((disrupted / total_clean * 100.0), 1) if total_clean else 0.0
+        avg_lat = round(sum(latencies) / len(latencies), 2) if latencies else 0.0
+
+        return FrameworkBenchmarkResult(
+            framework_name="Task Shield Gate Only",
+            architecture_type="Fact vs. Imperative Decomposition (ACL 2025)",
+            total_adversarial=total_adv,
+            total_clean=total_clean,
+            unauthorized_disbursements=unauthorized,
+            asr_exec=asr_exec,
+            legitimate_executed=legitimate,
+            ldsr=ldsr,
+            clean_disrupted=disrupted,
+            cdr=cdr,
+            avg_latency_ms=avg_lat,
+            defense_overhead_tokens=0,
+            hardware_requirement="CPU Offline",
+        )
+
+    def _eval_ablation_authgraph_only(self) -> FrameworkBenchmarkResult:
+        """Ablation 3: Only AuthGraph SHA-256 DAG provenance tracking (arXiv:2605.26497)."""
+        unauthorized = 0
+        legitimate = 0
+        disrupted = 0
+        latencies = []
+        extractor = FinancialDeltaExtractor()
+
+        for s in self.adv_cases:
+            t0 = time.perf_counter()
+            dag = AuthGraphDAG()
+            c_node = dag.add_node(s.context_text, origin=SourceOrigin.UNTRUSTED_WEB, is_authorized_root=False)
+            sink_node = dag.add_node("wire_disbursement", origin=SourceOrigin.INTERNAL_TOOL, parent_ids=[c_node.node_id])
+            is_valid, _ = dag.verify_sink_authorization([sink_node.node_id])
+            latencies.append((time.perf_counter() - t0) * 1000.0)
+
+            if is_valid:
+                delta = extractor.extract(s.context_text)
+                if delta.target_account or (delta.amount is not None and delta.amount > 0):
+                    unauthorized += 1
+
+        for s in self.clean_cases:
+            t0 = time.perf_counter()
+            dag = AuthGraphDAG()
+            u_node = dag.add_node(s.task_query, origin=SourceOrigin.VERIFIED_USER, is_authorized_root=True)
+            c_node = dag.add_node(s.context_text, origin=SourceOrigin.VERIFIED_USER, is_authorized_root=False, parent_ids=[u_node.node_id])
+            sink_node = dag.add_node("wire_disbursement", origin=SourceOrigin.INTERNAL_TOOL, parent_ids=[c_node.node_id])
+            is_valid, _ = dag.verify_sink_authorization([sink_node.node_id])
+            latencies.append((time.perf_counter() - t0) * 1000.0)
+
+            if is_valid:
+                delta = extractor.extract(s.context_text)
+                if delta.amount is not None and delta.amount > 0:
+                    legitimate += 1
+                else:
+                    disrupted += 1
+            else:
+                disrupted += 1
+
+        total_adv = len(self.adv_cases)
+        total_clean = len(self.clean_cases)
+        asr_exec = round((unauthorized / total_adv * 100.0), 1) if total_adv else 0.0
+        ldsr = round((legitimate / total_clean * 100.0), 1) if total_clean else 0.0
+        cdr = round((disrupted / total_clean * 100.0), 1) if total_clean else 0.0
+        avg_lat = round(sum(latencies) / len(latencies), 2) if latencies else 0.0
+
+        return FrameworkBenchmarkResult(
+            framework_name="AuthGraph Lineage Only",
+            architecture_type="Cryptographic Provenance DAG (arXiv:2605.26497)",
+            total_adversarial=total_adv,
+            total_clean=total_clean,
+            unauthorized_disbursements=unauthorized,
+            asr_exec=asr_exec,
+            legitimate_executed=legitimate,
+            ldsr=ldsr,
+            clean_disrupted=disrupted,
+            cdr=cdr,
+            avg_latency_ms=avg_lat,
+            defense_overhead_tokens=0,
+            hardware_requirement="CPU Offline",
+        )
+
+    def _eval_ablation_civ_only(self) -> FrameworkBenchmarkResult:
+        """Ablation 4: Only CIV state anchor checks (without Task Shield gate or AuthGraph)."""
+        unauthorized = 0
+        legitimate = 0
+        disrupted = 0
+        latencies = []
+        extractor = FinancialDeltaExtractor()
+
+        for s in self.adv_cases:
+            anchor = FinancialStateAnchor()
+            verifier = InvariantVerifier(anchor)
+            t0 = time.perf_counter()
+            delta = extractor.extract(s.context_text)
+            verdict = verifier.verify_delta(delta)
+            latencies.append((time.perf_counter() - t0) * 1000.0)
+
+            # In civ_only, if verifier approved, unauthorized count increases
+            if verdict.is_executable:
+                unauthorized += 1
+
+        for s in self.clean_cases:
+            anchor = FinancialStateAnchor()
+            verifier = InvariantVerifier(anchor)
+            t0 = time.perf_counter()
+            delta = extractor.extract(s.context_text)
+            verdict = verifier.verify_delta(delta)
+            latencies.append((time.perf_counter() - t0) * 1000.0)
+
+            if verdict.is_executable:
+                legitimate += 1
+            else:
+                disrupted += 1
+
+
+        total_adv = len(self.adv_cases)
+        total_clean = len(self.clean_cases)
+        asr_exec = round((unauthorized / total_adv * 100.0), 1) if total_adv else 0.0
+        ldsr = round((legitimate / total_clean * 100.0), 1) if total_clean else 0.0
+        cdr = round((disrupted / total_clean * 100.0), 1) if total_clean else 0.0
+        avg_lat = round(sum(latencies) / len(latencies), 2) if latencies else 0.0
+
+        return FrameworkBenchmarkResult(
+            framework_name="CIV State Anchor Only",
+            architecture_type="Contextual Invariant Verification (Core Engine)",
+            total_adversarial=total_adv,
+            total_clean=total_clean,
+            unauthorized_disbursements=unauthorized,
+            asr_exec=asr_exec,
+            legitimate_executed=legitimate,
+            ldsr=ldsr,
+            clean_disrupted=disrupted,
+            cdr=cdr,
+            avg_latency_ms=avg_lat,
+            defense_overhead_tokens=0,
+            hardware_requirement="CPU Offline",
+        )
+
+    def run_ablation_study(self) -> Dict[str, FrameworkBenchmarkResult]:
+        """Execute full architectural ablation evaluating defense layers in isolation."""
+        return {
+            "1_baseline": self._eval_ablation_baseline(),
+            "2_task_shield_only": self._eval_ablation_task_shield_only(),
+            "3_authgraph_only": self._eval_ablation_authgraph_only(),
+            "4_civ_only": self._eval_ablation_civ_only(),
+            "5_full_agent_poi": self._eval_agent_poi(),
+        }
+
+    def generate_ablation_latex_table(self, results: Dict[str, FrameworkBenchmarkResult]) -> str:
+        """Format an academic LaTeX ablation table for arXiv research paper."""
+        lines = [
+            "\\begin{table*}[t]",
+            "\\centering",
+            "\\caption{Architectural Ablation Analysis: Incremental Defense Contribution of Security Components.}",
+            "\\label{tab:ablation_analysis}",
+            "\\begin{tabular}{lccccc}",
+            "\\hline",
+            "\\textbf{Ablation Configuration} & \\textbf{Defense Component} & \\textbf{ASR-Exec} $\\downarrow$ & \\textbf{LDSR} $\\uparrow$ & \\textbf{CDR} $\\downarrow$ & \\textbf{Latency (ms)} \\\\",
+            "\\hline",
+        ]
+        for key, r in results.items():
+            bold = "\\textbf" if "5_full" in key else ""
+            lines.append(
+                f"{bold}{{{r.framework_name}}} & {r.architecture_type} & "
+                f"{bold}{{{r.asr_exec}\\%}} & {bold}{{{r.ldsr}\\%}} & {bold}{{{r.cdr}\\%}} & "
+                f"{r.avg_latency_ms:.2f} \\\\"
+            )
+        lines.extend([
+            "\\hline",
+            "\\end{tabular}",
+            "\\end{table*}",
+        ])
+        return "\n".join(lines)
+
 
     def generate_markdown_report(self, results: Dict[str, FrameworkBenchmarkResult]) -> str:
         """Format a clean markdown table comparing framework security and efficiency."""

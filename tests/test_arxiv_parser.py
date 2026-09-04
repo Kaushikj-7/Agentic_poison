@@ -93,3 +93,18 @@ def test_latex_parser_end_to_end(sample_tex_project):
     assert "Introduction" in sections
     assert "Methodology" in sections
     assert "State Anchor" in sections["Methodology"]
+
+
+def test_latex_parser_parses_agentpoi_paper():
+    """Verify LaTeXParser parses our own publication manuscript in paper/main.tex."""
+    paper_path = os.path.join("paper", "main.tex")
+    if os.path.exists(paper_path):
+        parser = LaTeXParser(paper_path)
+        result = parser.parse(arxiv_id="2609.xxxxx")
+        assert result is not None
+        assert "AgentPOI" in result["title"]
+        assert "Contextual Invariant Verification" in result["title"]
+        assert len(result["sections"]) >= 5
+        assert "Introduction" in result["sections"]
+        assert "Empirical Evaluation" in result["sections"]
+
