@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
     env:
       PYTHONPATH: ${{ github.workspace }}
 
@@ -36,6 +36,10 @@ jobs:
           pip install -r requirements.txt
           pip install pytest-cov
           pip install -e .
+
+      - name: Pre-Flight Verification Gate
+        run: |
+          python scripts/ci_check.py
 
       - name: Syntax & Compilation Verification
         run: |
