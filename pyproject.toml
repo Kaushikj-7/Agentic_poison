@@ -48,3 +48,7 @@ ignore = ["E501"]
 
 [tool.setuptools.packages.find]
 include = ["agent_poi*"]
+
+[tool.setuptools.package-data]
+agent_poi = ["*.yaml", "config.yaml"]
+

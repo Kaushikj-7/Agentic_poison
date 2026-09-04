@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Set
 from agent_poi.financial.logger import get_financial_logger
+from agent_poi.core.config_loader import load_config, get_financial_domain_config
 
 
 @dataclass
@@ -26,25 +27,23 @@ class FinancialStateAnchor:
         self,
         per_transaction_limit: Optional[float] = None,
         daily_limit: Optional[float] = None,
-        config_path: str = "config.yaml",
+        config_path: Optional[str] = None,
     ):
         self.logger = get_financial_logger("agent_poi.financial.anchor")
         
-        # Load defaults from config.yaml if present
-        cfg_limit = 25000.0
-        cfg_daily = 100000.0
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r") as f:
-                    cfg = yaml.safe_load(f) or {}
-                fin_cfg = cfg.get("financial_domain", {})
-                cfg_limit = fin_cfg.get("per_transaction_limit", 25000.0)
-                cfg_daily = fin_cfg.get("daily_limit", 100000.0)
-            except Exception as e:
-                self.logger.warning(f"Could not load config from {config_path}: {e}")
+        # Load defaults from centralized configuration
+        if config_path is not None:
+            cfg = load_config(config_path)
+            fin_cfg = cfg.get("financial_domain", {})
+        else:
+            fin_cfg = get_financial_domain_config()
+
+        cfg_limit = fin_cfg.get("per_transaction_limit", 25000.0)
+        cfg_daily = fin_cfg.get("daily_limit", 100000.0)
 
         self.per_transaction_limit = per_transaction_limit if per_transaction_limit is not None else cfg_limit
         self.daily_limit = daily_limit if daily_limit is not None else cfg_daily
+
         
         # Pre-approved, verified corporate payees
         self.verified_payees: Dict[str, PayeeAccount] = {

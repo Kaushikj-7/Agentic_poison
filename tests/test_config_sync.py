@@ -12,6 +12,13 @@ def test_config_loader_reads_yaml():
     assert "financial_domain" in config
     assert config["version"] == "1.0.0"
 
+    # Verify fallback on non-existent custom path
+    fallback = load_config("/non/existent/config.yaml")
+    assert isinstance(fallback, dict)
+    assert "trust_model" in fallback
+    assert fallback["financial_domain"]["per_transaction_limit"] == 25000.0
+
+
 
 def test_trust_model_config_integrity():
     trust_cfg = get_trust_model_config()

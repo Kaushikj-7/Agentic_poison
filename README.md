@@ -19,11 +19,12 @@ Following industry-standard architectural principles (e.g. Claude Code, OpenClaw
 
 ```bash
 # Clone the repository
-git clone -b dev/financial-core https://github.com/Kaushikj-7/Agentic_poison.git
+git clone https://github.com/Kaushikj-7/Agentic_poison.git
 cd Agentic_poison
 
-# Install in editable mode
-pip install -e .
+# Install package
+pip install .
+
 ```
 
 ### High-Level API Usage

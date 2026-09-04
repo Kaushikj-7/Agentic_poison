@@ -37,9 +37,16 @@ jobs:
           pip install pytest-cov
           pip install -e .
 
+      - name: Package Wheel Build & Installation Verification
+        run: |
+          pip wheel . --no-deps -w dist/
+          pip install dist/*.whl --force-reinstall --no-deps
+          rm -rf dist/
+
       - name: Pre-Flight Verification Gate
         run: |
           python scripts/ci_check.py
+
 
       - name: Syntax & Compilation Verification
         run: |
