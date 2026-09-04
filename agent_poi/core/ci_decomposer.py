@@ -6,7 +6,7 @@ Grounded in Abdelnabi & Bagdasarian (arXiv:2605.17634, May 2026).
 """
 
 import re
-from typing import Dict, Any, Tuple, Optional
+from typing import Tuple, Optional, List
 from agent_poi.memory.schema import CIPartition, SourceOrigin
 
 

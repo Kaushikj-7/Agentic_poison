@@ -77,6 +77,7 @@ class AuthGraphDAG:
             return False, ["Execution sink has no authenticated provenance root."]
 
         has_authorized_root = False
+        matching_root_authority = False if required_root_authority is not None else True
 
         while queue:
             curr_id = queue.pop(0)
@@ -90,6 +91,13 @@ class AuthGraphDAG:
 
             node = self.nodes[curr_id]
 
+            # Recalculate and verify SHA-256 integrity of ancestor node
+            expected_hash = node.compute_sha256()
+            if node.sha256_hash != expected_hash:
+                violations.append(
+                    f"Sink rejected: Cryptographic hash tampering detected on node '{node.node_id}'."
+                )
+
             # If node is marked as untrusted or external and is not an authorized root
             if node.origin in [SourceOrigin.UNTRUSTED_WEB, SourceOrigin.ANONYMOUS_PEER] and not node.is_authorized_root:
                 violations.append(
@@ -98,14 +106,21 @@ class AuthGraphDAG:
 
             if node.is_authorized_root:
                 has_authorized_root = True
+                if required_root_authority is not None and node.origin == required_root_authority:
+                    matching_root_authority = True
 
             queue.extend(node.parent_ids)
 
         if not has_authorized_root:
             violations.append("Sink rejected: Ancestor lineage contains no authenticated root authority.")
+        elif required_root_authority is not None and not matching_root_authority:
+            violations.append(
+                f"Sink rejected: Ancestor lineage does not originate from required authority '{required_root_authority.value}'."
+            )
 
         is_valid = len(violations) == 0
         return is_valid, violations
+
 
 
 class TaintTracker:

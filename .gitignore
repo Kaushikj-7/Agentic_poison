@@ -1,4 +1,11 @@
-# Developer Internal Artifacts & Agent Governance (Never published)
+# =============================================================================
+# AgentPOI Repository Quarantine & Ignore Policy
+# Strictly Enforcing Rule 6 (Public vs. Developer Abstraction Quarantine)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Developer Internal Artifacts & Agent Governance (Never published)
+# -----------------------------------------------------------------------------
 MISTAKES_LEDGER.md
 PROJECT_LEDGER.md
 AGENTS.md
@@ -12,13 +19,19 @@ storage/
 output/
 scratch/
 .system_generated/
+.gemini/
 
-# Byte-compiled / optimized / DLL files
+# -----------------------------------------------------------------------------
+# 2. Byte-compiled / Optimized / Python Runtime
+# -----------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
 
-# Testing and coverage
+# -----------------------------------------------------------------------------
+# 3. Testing, Coverage, & Linter Caches
+# -----------------------------------------------------------------------------
 .pytest_cache/
 .coverage
 .coverage.*
@@ -26,20 +39,65 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
 
-# Environments
+# -----------------------------------------------------------------------------
+# 4. Virtual Environments & Secrets
+# -----------------------------------------------------------------------------
 .venv/
 env/
 venv/
 ENV/
 .env
+*.env
+.streamlit/secrets.toml
 
-# Distribution / packaging
+# -----------------------------------------------------------------------------
+# 5. Packaging & Distribution Artifacts
+# -----------------------------------------------------------------------------
 build/
 dist/
 *.egg-info/
 *.egg
+.eggs/
 
-# OS files
+# -----------------------------------------------------------------------------
+# 6. Local Data Stores, Vector Databases, & Temp Files
+# -----------------------------------------------------------------------------
+data/
+data/memory_store/
+*.db
+*.sqlite
+*.sqlite3
+tmp/
+temp/
+
+# -----------------------------------------------------------------------------
+# 7. IDE, Editor, & Tooling Configuration
+# -----------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# -----------------------------------------------------------------------------
+# 8. Node & Frontend Tooling (if invoked by subagents)
+# -----------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# -----------------------------------------------------------------------------
+# 9. Operating System Artifacts
+# -----------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
+desktop.ini
+

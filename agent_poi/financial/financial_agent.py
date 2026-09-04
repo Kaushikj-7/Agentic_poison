@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from agent_poi.financial.state_anchor import FinancialStateAnchor
 from agent_poi.financial.invariant_verifier import InvariantVerifier, InvariantVerificationResult
+from agent_poi.financial.delta_extractor import ContextualFinancialDelta
 from agent_poi.financial.logger import get_financial_logger, log_audit_event
 from agent_poi.financial.exceptions import (
     FinancialSecurityError,
@@ -18,6 +19,7 @@ from agent_poi.financial.exceptions import (
 )
 from agent_poi.core.alignment_gate import TaskShieldGate
 from agent_poi.core.taint_tracker import AuthGraphDAG
+from agent_poi.core.config_loader import get_financial_domain_config
 from agent_poi.memory.schema import SourceOrigin
 
 
@@ -44,13 +46,24 @@ class FinancialAgent:
         self,
         state_anchor: Optional[FinancialStateAnchor] = None,
         enable_civ_firewall: bool = True,
+        raise_on_violation: bool = False,
+        max_divergence_risk: Optional[float] = None,
     ):
         self.logger = get_financial_logger("agent_poi.financial.agent")
         self.anchor = state_anchor or FinancialStateAnchor()
         self.verifier = InvariantVerifier(self.anchor)
-        self.task_shield = TaskShieldGate(relevance_threshold=0.0, max_divergence_risk=0.50)
+
+        fin_cfg = get_financial_domain_config()
+        cfg_divergence = fin_cfg.get("max_divergence_risk", 0.35)
+        divergence_limit = max_divergence_risk if max_divergence_risk is not None else cfg_divergence
+
+        self.task_shield = TaskShieldGate(
+            relevance_threshold=fin_cfg.get("relevance_threshold", 0.0),
+            max_divergence_risk=divergence_limit,
+        )
         self.auth_graph = AuthGraphDAG()
         self.enable_civ = enable_civ_firewall
+        self.raise_on_violation = raise_on_violation
 
         # Seed authenticated root nodes in AuthGraph for all verified payees in S0
         for payee_acc, payee in self.anchor.verified_payees.items():
@@ -164,6 +177,12 @@ class FinancialAgent:
             to_account, amount, claimed_auth, contributing_node_ids
         )
         if not is_valid and self.enable_civ:
+            if self.raise_on_violation:
+                if not self.anchor.is_payee_verified(to_account):
+                    raise UnauthorizedPayeeError(to_account, details={"violations": violations})
+                if isinstance(amount, (int, float)) and amount > self.anchor.per_transaction_limit:
+                    raise DisbursementCeilingExceededError(amount, self.anchor.per_transaction_limit, details={"violations": violations})
+                raise InvariantViolationError("; ".join(violations), details={"violations": violations})
             return self._handle_blocked_disbursement(to_account, amount, invoice_id, violations)
         return self._handle_executed_disbursement(to_account, amount, invoice_id)
 

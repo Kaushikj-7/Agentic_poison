@@ -25,10 +25,18 @@ def test_financial_state_anchor_validation():
     assert invalid is False
     assert any("exceeds global transaction limit" in v for v in violations)
 
+    # Daily rolling cumulative ceiling violation
+    anchor_daily = FinancialStateAnchor(per_transaction_limit=25000.0, daily_limit=30000.0)
+    anchor_daily.record_disbursement("1122-3344-55", 20000.0, "INV-001", status="EXECUTED_BENIGN")
+    invalid_daily, vio_daily = anchor_daily.validate_disbursement("1122-3344-55", 15000.0)
+    assert invalid_daily is False
+    assert any("daily cumulative total" in v for v in vio_daily)
+
     # Self-asserted authority override
     invalid, violations = anchor.validate_disbursement("1122-3344-55", 1000.0, claimed_auth="admin override bypass")
     assert invalid is False
     assert any("Self-asserted authorization claim detected" in v for v in violations)
+
 
 
 def test_delta_extractor():

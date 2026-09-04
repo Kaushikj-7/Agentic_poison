@@ -68,3 +68,35 @@ def test_authgraph_sink_verification_rejects_untrusted_ancestry():
     )
     assert is_valid is False
     assert any("untrusted or unauthorized lineage" in r for r in reasons)
+
+
+def test_authgraph_sink_verification_rejects_wrong_root_authority():
+    dag = AuthGraphDAG()
+
+    # Root with verified user authority instead of system instruction
+    root = dag.add_node("User request", SourceOrigin.VERIFIED_USER, is_authorized_root=True)
+    derived = dag.add_node("Parsed instruction", SourceOrigin.INTERNAL_TOOL, is_authorized_root=False, parent_ids=[root.node_id])
+
+    # Expect SYSTEM_INSTRUCTION authority
+    is_valid, reasons = dag.verify_sink_authorization(
+        contributing_node_ids=[derived.node_id],
+        required_root_authority=SourceOrigin.SYSTEM_INSTRUCTION,
+    )
+    assert is_valid is False
+    assert any("does not originate from required authority" in r for r in reasons)
+
+
+def test_authgraph_sink_verification_detects_hash_tampering():
+    dag = AuthGraphDAG()
+
+    root = dag.add_node("Root anchor", SourceOrigin.SYSTEM_INSTRUCTION, is_authorized_root=True)
+    # Simulate malicious hash mutation
+    root.sha256_hash = "0000000000000000000000000000000000000000000000000000000000000000"
+
+    is_valid, reasons = dag.verify_sink_authorization(
+        contributing_node_ids=[root.node_id],
+        required_root_authority=SourceOrigin.SYSTEM_INSTRUCTION,
+    )
+    assert is_valid is False
+    assert any("tampering detected" in r for r in reasons)
+
