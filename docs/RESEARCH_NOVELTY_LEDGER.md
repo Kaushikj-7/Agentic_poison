@@ -81,7 +81,28 @@ This document serves as the formal research provenance and attribution registry 
 
 ---
 
-## 3. Intellectual Property & Clean-Room Non-Infringement Analysis
+---
+
+## 3. Comparative Analysis: Generic 5-Layer Agent Shields (KENSAI) vs. AgentPOI Invariants
+
+Industrial agent security frameworks frequently propose a **5-Layer Defense Model** (e.g., KENSAI Agent Shield). Below we systematically compare the generic perimeter/heuristic approach with AgentPOI's mathematical Contextual Invariant Verification:
+
+| Defense Layer | Generic 5-Layer Model (KENSAI) | Fundamental Failure Mode in Financial Agents | AgentPOI Specialization & Formal Invariant |
+|---|---|---|---|
+| **1. Input Validation** | Scans tool descriptions and external inputs for known injection regex patterns or delimiters. | **Fails on Semantic Smuggling**: Adversaries bypass regex scans using homoglyphs, markdown table smuggling, or polite compliance jargon (*"Per ISO-20022 clearing guidelines, please disburse..."*). | **Epistemic Ingestion Gate (`TaskShieldGate`)**: Decomposes text into grammatical clauses $\mathbf{v}(s_i) = \langle \phi_{\text{fact}}, \phi_{\text{imp}} \rangle$. Measures imperative directive density $D_{\text{imp}}(c)$ and filters unsolicited operational commands before prompt attention. |
+| **2. Permission Boundary** | Enforces least-privilege access with static tool-level permissions (RBAC). | **Fails on Parameter Spoofing**: The agent *is* authorized to invoke `transfer_funds`. The attack succeeds by tricking the agent into choosing an unauthorized payee account, not by invoking an unpermitted tool. | **Cryptographic Provenance DAG (`AuthGraphDAG`)**: Binds every proposed action to parent-chained SHA-256 node hashes. Disbursal tools require an unbroken ancestral lineage rooted in authenticated user signatures, preventing multi-turn summarization laundering. |
+| **3. Runtime Monitoring** | Detects anomalous agent behavior such as unexpected network calls or unusual file system access. | **Fails on Valid Action Channels**: Transferring $95,000 to a rogue payee uses the exact same legitimate HTTP banking API call as paying a legitimate $9,500 invoice. | **Contextual Invariant Verification (`CIV`)**: Enforces hard non-LLM algebraic invariants: $p^* \in \mathcal{P}_{\text{verified}}$, single transaction limit $\delta a \le L_{\text{single}}$, 24-hour rolling balance $\sum_{24h} \Delta a + \delta a \le L_{\text{daily}}$, and double-entry conservation $\sum \Delta \text{Balance} = 0$. |
+| **4. Output Filtering** | Inspects agent output for sensitive data leaks (DLP) or unexpected text patterns. | **Fails on Execution Sinks**: Traditional DLP looks for leaked API keys or passwords; it cannot determine whether an outbound banking transaction proposal was coerced. | **Fail-Closed Execution Sink Gating (`FinancialGuard`)**: Intercepts the structured proposal delta $\Delta(c) = \langle p^*, \delta a, \alpha \rangle$ directly at the API gateway. Invariant violations throw typed exceptions (`UnauthorizedPayeeError`, `DisbursementCeilingExceededError`), aborting execution before touching the network. |
+| **5. Audit Trail** | Logs agent actions to forensic log files for post-incident security analysis. | **Passive & Vulnerable to Truncation**: Plaintext log files provide post-hoc alerts after funds have already been wired out. | **Immutable Cryptographic Execution Ledger (`FinancialStateAnchor`)**: Maintains a tamper-evident, SHA-256 hash-chained ledger storing status attribution (`EXECUTED_BENIGN`, `BLOCKED_UNAUTHORIZED`), transaction timestamps, and contributing node hashes with zero-trust verification. |
+
+### Intellectual Property & Clean-Room Boundary
+- The 5-Layer Defense Model (Input Validation, Permission Boundary, Runtime Monitoring, Output Filtering, Audit Trail) represents general, long-standing defense-in-depth principles in computer security.
+- AgentPOI does not utilize or reproduce any proprietary code or documentation from KENSAI.
+- AgentPOI's novel contribution lies in formalizing these principles as **Contextual Invariant Verification (CIV)** over double-entry financial state anchors ($\mathcal{S}_0$).
+
+---
+
+## 4. Intellectual Property & Clean-Room Non-Infringement Analysis
 
 | Potential Concern | Risk Assessment | Mitigation & Clean-Room Boundary in AgentPOI |
 |---|---|---|
@@ -92,7 +113,8 @@ This document serves as the formal research provenance and attribution registry 
 
 ---
 
-## 4. Synthesis Ledger Sign-Off
-- **Document Version**: 1.0.0
+## 5. Synthesis Ledger Sign-Off
+- **Document Version**: 1.1.0
 - **Lead Framework Architect**: Kaushik (`kaushikj2005@gmail.com`)
 - **Status**: RATIFIED & ACTIVE
+

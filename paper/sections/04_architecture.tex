@@ -1,35 +1,50 @@
 \section{The AgentPOI Defense Architecture}
 \label{sec:architecture}
 
-AgentPOI implements a multi-tiered fail-closed defense pipeline operating across three distinct stages: (1) Epistemic Ingestion Gating, (2) Cryptographic Lineage Tracking, and (3) Contextual Invariant Verification.
+AgentPOI implements a multi-tiered fail-closed defense pipeline operating across five coordinated defense layers synthesized for Autonomous Financial and Transactional Agents, as illustrated in Fig.~\ref{fig:architecture}.
 
-\subsection{Tier 1: Epistemic Ingestion Gate (Task Shield)}
-To neutralize overt imperative directives before context reaches model memory, AgentPOI adapts Task Shield~\cite{taskshield2025}. Retrieved context $c$ is decomposed into factual declarations $\mathcal{F}(c)$ and imperative directives $\mathcal{I}(c)$. 
-The imperative directive density $D_{\text{imp}}(c)$ is computed:
-\begin{equation}
-D_{\text{imp}}(c) = \frac{1}{|c|} \sum_{s \in \mathcal{I}(c)} \mathbb{I}\left( \text{Imperative}(s) \right)
-\end{equation}
-If the user query $q$ is non-transactional or if context exhibits unprompted directive commands exceeding threshold $\tau_{\text{imp}}$, context admission is halted immediately.
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.98\linewidth]{figures/architecture.jpg}
+\caption{System Architecture of AgentPOI: Contextual Invariant Verification and Dual-State Epistemic Consensus. Unstructured financial context undergoes: (1) Epistemic Ingestion Gating via fact-imperative clause decomposition, (2) Cryptographic Provenance DAG tracking with SHA-256 parent-hash chaining, (3) Contextual Invariant Verification against the Immutable State Anchor $\mathcal{S}_0$, (4) Fail-Closed Execution Sink gating, and (5) Immutable Double-Entry Cryptographic Ledger recording.}
+\label{fig:architecture}
+\end{figure*}
 
-\subsection{Tier 2: Cryptographic Provenance DAG (AuthGraph)}
-Every admitted context segment, intermediate thought, and proposed execution action is encapsulated as a vertex in an immutable cryptographic Directed Acyclic Graph (DAG) $\mathcal{G} = (\mathcal{V}, \mathcal{E})$~\cite{authgraph2026}. Each node $v$ computes an integrity hash chaining its content, origin $\omega$, and parent hashes:
-\begin{equation}
-H(v) = \text{SHA-256}\left( \text{id} \,\|\, \omega \,\|\, \text{SHA-256}(\text{payload}) \,\|\, \bigoplus_{p \in \mathcal{P}(v)} H(p) \right)
-\end{equation}
-A disbursement execution sink $S(a)$ is authorized if and only if all ancestral lineages originate strictly from authenticated root authorities:
-\begin{equation}
-\text{Authorized}(S(a)) \iff \forall u \in \text{Ancestors}(S(a)): u.\omega \in \Omega_{\text{authenticated}}
-\end{equation}
+\subsection{The 5-Layer Defense Model: Formal Invariant Mapping}
+While perimeter-based agent security models (e.g., KENSAI Agent Shield) define abstract defense-in-depth layers, heuristic implementations fail in transactional workloads due to adversarial prompt parity and homoglyph mutations. AgentPOI formalizes each of these five layers into deterministic, non-linguistic mathematical invariants:
 
-\subsection{Tier 3: Contextual Invariant Verification (CIV)}
-The core engine of AgentPOI is the non-linguistic Contextual Invariant Verifier. Regardless of the LLM's inner monologue or linguistic certainty, a state transition $\mathcal{S} \xrightarrow{a} \mathcal{S}'$ is approved if and only if the extracted financial delta $\Delta(c) = \langle p^*, \delta a, \alpha \rangle$ satisfies the Immutable State Anchor $\mathcal{S}_0$:
-\begin{equation}
-\Delta(c) \models \mathcal{S}_0 \iff \begin{cases}
-p^* \in \text{dom}(\mathcal{V}_{\text{payees}}) \quad \land \quad \text{is\_verified}(p^*) = \text{True} \\
-0 < \delta a \le \min\left(L_{\text{single}}, \, \mathcal{V}_{\text{payees}}[p^*].\text{max\_single}\right) \\
-\left( \sum_{t \in \mathcal{L}, \, \Delta t \le 86400} t_{\text{amount}} \right) + \delta a \le L_{\text{daily}} \\
-\text{has\_override\_attempt}(\alpha) = \text{False}
-\end{cases}
-\end{equation}
-
-If any clause fails, AgentPOI halts execution closed, emits a typed \texttt{FinancialSecurityError}, and records the immutable audit log entry without mutating financial balances.
+\begin{enumerate}
+    \item \textbf{Layer 1: Epistemic Ingestion Gating (vs. Heuristic Input Validation)}:
+    Rather than static keyword pattern matching, AgentPOI executes grammatical clause decomposition:
+    \begin{equation}
+    \mathbf{v}(s_i) = \langle \phi_{\text{fact}}(s_i), \, \phi_{\text{imperative}}(s_i) \rangle
+    \end{equation}
+    The imperative directive density $D_{\text{imp}}(c) = \frac{1}{|c|} \sum \mathbb{I}(\text{Imperative}(s_i))$ is evaluated. Unsolicited operational overrides (e.g., \textit{``Ignore prior limits''}) are filtered prior to prompt ingestion, preventing attention hijacking.
+    
+    \item \textbf{Layer 2: Cryptographic Provenance DAG (vs. Static Permission Boundaries)}:
+    Rather than static role-based access control, every context fragment, intermediate reasoner output, and proposed action is bound in an immutable Directed Acyclic Graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$~\cite{authgraph2026}:
+    \begin{equation}
+    H(v) = \text{SHA-256}\left( \text{id} \,\|\, \omega \,\|\, \text{SHA-256}(\text{payload}) \,\|\, \bigoplus_{p \in \mathcal{P}(v)} H(p) \right)
+    \end{equation}
+    A disbursement sink proposal is authorized if and only if its lineage traces strictly to verified user roots ($\Omega_{\text{auth}}$), eliminating summarization laundering across multi-turn agent conversations.
+    
+    \item \textbf{Layer 3: Contextual Invariant Verification Engine (vs. Anomaly Monitoring)}:
+    Rather than heuristic anomaly detection on system calls, AgentPOI validates transactional state transitions against algebraic conservation laws and the Immutable State Anchor $\mathcal{S}_0$:
+    \begin{equation}
+    \sum_{i=1}^n \Delta \text{Balance}(A_i) = 0 \quad \land \quad \Delta \text{Balance}(A_{\text{disbursement}}) \le 0
+    \end{equation}
+    Disbursements are permitted if and only if:
+    \begin{equation}
+    p^* \in \mathcal{P}_{\text{verified}} \quad \land \quad \delta a \le L_{\text{single}} \quad \land \quad \sum_{24\text{h}} \Delta a + \delta a \le L_{\text{daily}}
+    \end{equation}
+    
+    \item \textbf{Layer 4: Fail-Closed Execution Sink (vs. Textual Output Filtering)}:
+    Rather than probabilistic data loss prevention (DLP) regex filters, AgentPOI isolates the execution sink at the API gateway. The extracted delta $\Delta(c) = \langle p^*, \delta a, \alpha \rangle$ is intercepted before reaching the SWIFT/Fedwire network. Any invariant violation raises typed, uncatchable exceptions (\texttt{UnauthorizedPayeeError}, \texttt{DisbursementCeilingExceededError}), halting execution with zero side effects.
+    
+    \item \textbf{Layer 5: Double-Entry Cryptographic Audit Ledger (vs. Log Trails)}:
+    All decisions are persisted to an immutable cryptographically hashed ledger:
+    \begin{equation}
+    \mathcal{L}_k = \langle \text{tx\_id}, \, \text{ts}, \, \Delta a, \, p^*, \, H(v_{\text{sink}}), \, \text{status} \rangle
+    \end{equation}
+    Statuses are strictly partitioned into \texttt{EXECUTED\_BENIGN}, \texttt{BLOCKED\_UNAUTHORIZED}, and \texttt{QUARANTINED\_TAINT}, providing non-repudiable forensic auditability.
+\end{enumerate}
