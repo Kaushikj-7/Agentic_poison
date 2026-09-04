@@ -42,18 +42,9 @@ jobs:
         run: |
           # Verify no committed live API secrets or private tokens
           python -c "
-          import os, re
-          secret_pat = re.compile(r'(?:api[_-]?key|secret|token|password)\s*[:=]\s*[\"\\\'][A-Za-z0-9_\-]{20,}[\"\\\']', re.I)
-          violations = []
-          for root, _, files in os.walk('agent_poi'):
-              for f in files:
-                  if f.endswith('.py'):
-                      p = os.path.join(root, f)
-                      with open(p, 'r', encoding='utf-8') as src:
-                          for idx, line in enumerate(src, 1):
-                              if secret_pat.search(line):
-                                  violations.append(f'{p}:{idx}')
-          if violations:
+          from scripts.ci_check import check_secrets
+          is_ok, violations = check_secrets()
+          if not is_ok:
               raise SystemExit(f'Secrets detected in code: {violations}')
           print('Security Audit: ZERO hardcoded secrets detected.')
           "
