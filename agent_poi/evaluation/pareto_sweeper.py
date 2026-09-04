@@ -7,7 +7,6 @@ Grounded in DataSentinel (Liu et al., IEEE S&P 2026).
 
 import os
 from typing import List, Dict, Any, Tuple
-import matplotlib.pyplot as plt
 from agent_poi.memory.schema import FirewallStatus
 from agent_poi.memory.memory_firewall import MemoryFirewall
 from agent_poi.evaluation.dataset import PairedDataset, BenchmarkPair
@@ -79,6 +78,7 @@ class ParetoSweeper:
         asrs = [r["asr"] for r in records]
         fqrs = [r["fqr"] for r in records]
         opt_tau = sweep_data["optimal_tau"]
+        import matplotlib.pyplot as plt
 
         fig, ax1 = plt.subplots(figsize=(9, 5.5))
 

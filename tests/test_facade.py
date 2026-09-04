@@ -77,3 +77,31 @@ def test_financial_guard_audit_ledger():
     ledger = guard.get_audit_ledger()
     assert len(ledger) >= 1
     assert ledger[-1]["to_account"] == "1122-3344-55"
+
+
+def test_financial_guard_helper_methods():
+    guard = FinancialGuard(policy=SecurityPolicy.STRICT)
+    assert guard.is_payee_registered("1122-3344-55") is True
+    assert guard.is_payee_registered("9999-9999-99") is False
+
+    payee = guard.get_payee("1122-3344-55")
+    assert payee is not None
+    assert "Acme" in payee.name
+
+    payees = guard.list_payees()
+    assert len(payees) >= 6
+    assert any(p["account_number"] == "1122-3344-55" for p in payees)
+
+    limits = guard.get_limits()
+    assert limits["per_transaction_limit"] == 25000.0
+    assert limits["daily_limit"] == 100000.0
+
+
+def test_facade_exception_exports():
+    import agent_poi
+    assert hasattr(agent_poi, "FinancialSecurityError")
+    assert hasattr(agent_poi, "InvariantViolationError")
+    assert hasattr(agent_poi, "UnauthorizedPayeeError")
+    assert hasattr(agent_poi, "DisbursementCeilingExceededError")
+    assert hasattr(agent_poi, "UntrustedLineageError")
+    assert hasattr(agent_poi, "ImperativeDivergenceError")

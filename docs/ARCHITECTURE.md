@@ -134,3 +134,18 @@ At the execution sink (`process_disbursement`), the agent verifies that the prop
                                ▼
                [Execution Sink: Ledger Write & Wire]
 ```
+
+---
+
+## 6. Public Abstraction Boundaries & Scaffolding Isolation
+
+To comply with enterprise open-source software engineering standards (e.g. Anthropic Claude Code, OpenClaw, CrewAI), AgentPOI strictly decouples public consumer interfaces from internal implementation scaffolding:
+
+### 6.1. Clean Public Facade (`FinancialGuard`)
+End-user programmers and integrating applications do not interact directly with raw DAG pointers or regex parsers. Instead, the high-level `FinancialGuard` provides:
+- Single-point initialization: `FinancialGuard(policy=SecurityPolicy.STRICT)`
+- Declarative payee management: `guard.register_payee(...)`
+- High-level verdict envelopes: `GuardVerdict` containing approval boolean, violations list, audit record, and cryptographic lineage hash.
+
+### 6.2. Strict Developer Scaffolding Isolation
+All internal development artifacts (agent behavioral rules `AGENTS.md`, milestone tracking `PROJECT_LEDGER.md`, failure logs `MISTAKES_LEDGER.md`, and supervisory agent monitors) are isolated from public distributions and strictly git-ignored via `.gitignore`. External developers importing `agent_poi` via `pip` or cloning the public repository interact only with pure library components, tests, and documentation.

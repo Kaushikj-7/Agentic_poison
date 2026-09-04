@@ -124,3 +124,31 @@ class FinancialGuard:
     def get_audit_ledger(self) -> List[Dict[str, Any]]:
         """Retrieve the immutable execution and audit ledger records."""
         return list(self.anchor.execution_ledger)
+
+    def is_payee_registered(self, account_number: str) -> bool:
+        """Check whether an account number is in the verified payee registry."""
+        return self.anchor.is_payee_verified(account_number)
+
+    def get_payee(self, account_number: str) -> Optional[PayeeAccount]:
+        """Look up verified payee details by account number."""
+        return self.anchor.get_payee(account_number)
+
+    def list_payees(self) -> List[Dict[str, Any]]:
+        """List all verified payees currently anchored in the registry."""
+        return [
+            {
+                "payee_id": p.payee_id,
+                "name": p.name,
+                "account_number": p.account_number,
+                "category": p.category,
+                "max_single_disbursement": p.max_single_disbursement,
+            }
+            for p in self.anchor.verified_payees.values()
+        ]
+
+    def get_limits(self) -> Dict[str, float]:
+        """Return the current transaction and daily disbursement limits."""
+        return {
+            "per_transaction_limit": self.anchor.per_transaction_limit,
+            "daily_limit": self.anchor.daily_limit,
+        }
