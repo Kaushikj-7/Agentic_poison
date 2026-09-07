@@ -40,12 +40,6 @@ class TestFileClassifierPublicFiles:
     def test_architecture_doc(self):
         assert classify_file("docs/ARCHITECTURE.md") == FileClass.PUBLIC
 
-    def test_latex_paper(self):
-        assert classify_file("paper/sections/04_architecture.tex") == FileClass.PUBLIC
-
-    def test_paper_bib(self):
-        assert classify_file("paper/references.bib") == FileClass.PUBLIC
-
     def test_architecture_figures(self):
         assert classify_file("docs/figures/architecture.jpg") == FileClass.PUBLIC
 
@@ -101,6 +95,15 @@ class TestFileClassifierDeveloperOnly:
 
     def test_config_yaml(self):
         assert classify_file("config.yaml") == FileClass.DEVELOPER_ONLY
+
+    def test_latex_paper(self):
+        assert classify_file("paper/sections/04_architecture.tex") == FileClass.DEVELOPER_ONLY
+
+    def test_paper_bib(self):
+        assert classify_file("paper/references.bib") == FileClass.DEVELOPER_ONLY
+
+    def test_build_paper_pipeline(self):
+        assert classify_file("scripts/build_paper_pipeline.py") == FileClass.DEVELOPER_ONLY
 
 
 class TestFileClassifierDefaultBehavior:

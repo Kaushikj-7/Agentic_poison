@@ -121,6 +121,10 @@ DEVELOPER_ONLY_RULES: List[str] = [
     "agent_poi/research/paper_tutor.py",
     "tests/test_education_modules.py",
     "tests/test_paper_tutor.py",
+    # Academic paper LaTeX manuscript & build pipeline (Local only)
+    "paper/**",
+    "paper/*",
+    "scripts/build_paper_pipeline.py",
 ]
 
 PUBLIC_EXPLICIT: List[str] = [
@@ -141,13 +145,8 @@ PUBLIC_EXPLICIT: List[str] = [
     "docs/DEVELOPMENT.md",
     "docs/MATHEMATICAL_FORMULATION.md",
     "docs/figures/*",
-    # Academic paper (LaTeX source)
-    "paper/*.tex",
-    "paper/*.bib",
-    "paper/figures/*",
     # Production scripts
     "scripts/ci_check.py",
-    "scripts/build_paper_pipeline.py",
     "scripts/git_guardian.py",
     "scripts/run_experiment_pipeline.py",
 ]

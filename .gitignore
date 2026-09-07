@@ -38,6 +38,9 @@ scripts/demo_vault_story.py
 scripts/audit_workspace_mistakes.py
 tests/test_education_modules.py
 tests/test_paper_tutor.py
+# Academic LaTeX paper drafts & build pipeline (Local only)
+paper/
+scripts/build_paper_pipeline.py
 
 # -----------------------------------------------------------------------------
 # 2. Byte-compiled / Optimized / Python Runtime
