@@ -8,7 +8,7 @@ Evaluates 60 ground-truth scenarios (30 adversarial, 30 clean) adapted from
 AgentDojo (Banking), InjecAgent (Financial), and real Accounts Payable invoices.
 """
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 from pydantic import BaseModel, Field
 from agent_poi.financial.financial_agent import FinancialAgent
 from agent_poi.financial.state_anchor import FinancialStateAnchor

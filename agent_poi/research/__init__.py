@@ -11,6 +11,19 @@ from agent_poi.research.synthesis_extractor import (
     DomainAdaptationRecord,
     ResearchSynthesisExtractor,
 )
+from agent_poi.research.pdf_parser import (
+    PDFPaperParser,
+    parse_all_papers as parse_all_pdf_papers,
+)
+from agent_poi.research.architecture_synthesizer import (
+    ArchitectureSynthesizer,
+    CandidateArchitecture,
+)
+from agent_poi.research.experiment_runner import (
+    ExperimentOrchestrator,
+    ExperimentResult,
+    GitBranchManager,
+)
 
 __all__ = [
     "LaTeXParser",
@@ -20,5 +33,12 @@ __all__ = [
     "ResearchPaperMetadata",
     "DomainAdaptationRecord",
     "ResearchSynthesisExtractor",
+    "PDFPaperParser",
+    "parse_all_pdf_papers",
+    "ArchitectureSynthesizer",
+    "CandidateArchitecture",
+    "ExperimentOrchestrator",
+    "ExperimentResult",
+    "GitBranchManager",
 ]
 

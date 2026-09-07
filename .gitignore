@@ -20,6 +20,24 @@ output/
 scratch/
 .system_generated/
 .gemini/
+# Developer reference ledgers & methodology
+docs/SURVEY_AND_PAPERS.md
+docs/RESEARCH_NOVELTY_LEDGER.md
+docs/BENCHMARK_METHODOLOGY.md
+docs/pareto_frontier.png
+# Local configs
+config.yaml
+agent_poi/config.yaml
+# Developer-only tooling & educational prototypes
+agent_poi/education/
+agent_poi/research/paper_tutor.py
+scripts/fetch_arxiv_papers.py
+scripts/download_papers.py
+scripts/paper_tutor.py
+scripts/demo_vault_story.py
+scripts/audit_workspace_mistakes.py
+tests/test_education_modules.py
+tests/test_paper_tutor.py
 
 # -----------------------------------------------------------------------------
 # 2. Byte-compiled / Optimized / Python Runtime
@@ -100,4 +118,29 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# -----------------------------------------------------------------------------
+# 10. Research Papers & Binary Assets (NEVER publish to GitHub)
+# -----------------------------------------------------------------------------
+docs/papers/
+docs/papers/*.pdf
+*.pdf
+
+# -----------------------------------------------------------------------------
+# 11. Generated Research Data & Experiment Artifacts
+# -----------------------------------------------------------------------------
+data/research_extracts/
+data/experiment_results/
+experiment_reports/
+
+# -----------------------------------------------------------------------------
+# 12. Lock Files (auto-generated, too large for git)
+# -----------------------------------------------------------------------------
+uv.lock
+
+# -----------------------------------------------------------------------------
+# 13. Pytest Temp & Experiment Branch Metadata
+# -----------------------------------------------------------------------------
+.pytest_tmp/
+.experiment_state/
 

@@ -10,6 +10,13 @@ from functools import lru_cache
 from typing import Any, Dict, Optional
 import yaml
 
+try:
+    from dotenv import load_dotenv
+    # Auto-load the .env file from the repo root if it exists
+    load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+except ImportError:
+    pass
+
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "version": "1.0.0",

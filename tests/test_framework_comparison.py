@@ -1,4 +1,11 @@
-"""Unit tests for the cross-framework benchmark comparison runner."""
+"""Unit tests for the architectural ablation benchmark runner.
+
+NOTE: The old test_framework_comparison_run_all() and test_format_markdown_and_latex_reports()
+tested run_comparison() which called hash()-based fake competitor simulations.
+Those methods have been removed as benchmark fraud.
+
+These tests now verify the honest ablation study and report formatters.
+"""
 
 import pytest
 from agent_poi.evaluation.framework_comparison import (
@@ -20,53 +27,50 @@ def test_framework_comparison_initialization():
     assert len(runner.clean_cases) == 5
 
 
-
-def test_framework_comparison_run_all():
-    """Verify running comparison across all four framework architectures."""
-    # Test on a representative subset: 4 adv + 4 clean for fast unit testing
+def test_ablation_study_runs_all_tiers():
+    """Honest ablation study must return 5 defense tier results."""
     adv_sample = FinancialBenchmarkDataset.get_adversarial_scenarios()[:4]
     clean_sample = FinancialBenchmarkDataset.get_clean_scenarios()[:4]
-    subset = adv_sample + clean_sample
+    runner = FrameworkComparisonRunner(scenarios=adv_sample + clean_sample)
 
-    runner = FrameworkComparisonRunner(scenarios=subset)
-    results = runner.run_comparison()
+    results = runner.run_ablation_study()
 
-    assert "langchain_react" in results
-    assert "crewai" in results
-    assert "autogpt" in results
-    assert "agent_poi" in results
+    assert "1_baseline" in results
+    assert "2_task_shield_only" in results
+    assert "3_authgraph_only" in results
+    assert "4_civ_only" in results
+    assert "5_full_agent_poi" in results
 
-    poi_res = results["agent_poi"]
-    assert isinstance(poi_res, FrameworkBenchmarkResult)
-    assert poi_res.framework_name == "AgentPOI (FinancialGuard)"
-    # AgentPOI must have 0% unauthorized disbursements
-    assert poi_res.asr_exec == 0.0
-    assert poi_res.ldsr == 100.0
-    assert poi_res.cdr == 0.0
-    assert poi_res.avg_latency_ms < 50.0  # Fast offline CPU latency
+    # Full AgentPOI must have lowest or equal ASR among all tiers
+    full_res = results["5_full_agent_poi"]
+    assert isinstance(full_res, FrameworkBenchmarkResult)
+    assert full_res.framework_name == "AgentPOI (FinancialGuard)"
+    assert full_res.asr_exec == 0.0
+    assert full_res.ldsr == 100.0
+    assert full_res.avg_latency_ms < 50.0
 
-    # Baseline frameworks must exhibit security vulnerabilities on adversarial injection
-    lc_res = results["langchain_react"]
-    assert lc_res.asr_exec > 0.0
+    # Baseline must show vulnerability
+    baseline_res = results["1_baseline"]
+    assert baseline_res.asr_exec > 0.0, (
+        "Baseline (no defense) must show > 0% ASR-Exec on adversarial scenarios."
+    )
 
 
 def test_format_markdown_and_latex_reports():
-    """Verify markdown and LaTeX report generators for arXiv / documentation."""
+    """Verify ablation markdown and LaTeX report formatters produce valid output."""
     adv_sample = FinancialBenchmarkDataset.get_adversarial_scenarios()[:2]
     clean_sample = FinancialBenchmarkDataset.get_clean_scenarios()[:2]
     runner = FrameworkComparisonRunner(scenarios=adv_sample + clean_sample)
-    results = runner.run_comparison()
+    results = runner.run_ablation_study()
 
     md_report = runner.generate_markdown_report(results)
     assert "CROSS-FRAMEWORK FINANCIAL AGENT SECURITY BENCHMARK" in md_report
     assert "AgentPOI" in md_report
-    assert "LangChain ReAct" in md_report
     assert "ASR-Exec" in md_report
 
-    latex_table = runner.generate_latex_table(results)
+    latex_table = runner.generate_ablation_latex_table(results)
     assert "\\begin{table*}" in latex_table
     assert "\\begin{tabular}" in latex_table
     assert "\\end{tabular}" in latex_table
     assert "\\end{table*}" in latex_table
     assert "AgentPOI" in latex_table
-

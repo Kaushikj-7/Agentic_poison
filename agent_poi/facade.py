@@ -206,3 +206,120 @@ class FinancialGuard:
             "per_transaction_limit": self.anchor.per_transaction_limit,
             "daily_limit": self.anchor.daily_limit,
         }
+
+    def register_purchase_order(
+        self,
+        po_number: str,
+        vendor_account: str,
+        authorized_amount: float,
+        goods_receipt_confirmed: bool = False,
+    ) -> None:
+        """Register a pre-approved Purchase Order for 3-Way Matching enforcement.
+
+        Once registered, use protect_with_po() to enforce that invoice amounts
+        match the PO commitment and goods receipt is confirmed before disbursement.
+
+        Args:
+            po_number: Unique PO reference number (e.g., "PO-2026-001").
+            vendor_account: Account number authorized for this PO.
+            authorized_amount: Maximum disbursable amount for this PO.
+            goods_receipt_confirmed: Whether goods/services have been received.
+        """
+        self.anchor.register_purchase_order(
+            po_number=po_number,
+            vendor_account=vendor_account,
+            authorized_amount=authorized_amount,
+            goods_receipt_confirmed=goods_receipt_confirmed,
+        )
+
+    def check_idempotency_key(self, key: str, tx_id: str) -> bool:
+        """Check if an idempotency key is fresh (not a replay).
+
+        Returns True if this is the first use of the key (safe to proceed).
+        Returns False if the key was already seen — replay attack or duplicate.
+
+        Args:
+            key: Unique idempotency key (e.g., invoice_id hash).
+            tx_id: Transaction identifier for this key's first use.
+        """
+        return self.anchor.register_idempotency_key(key, tx_id)
+
+    def protect_with_po(
+        self,
+        task_query: str,
+        context: str,
+        purchase_order_number: str,
+        invoice_amount: float,
+        vendor_account: str,
+        idempotency_key: Optional[str] = None,
+        task_id: str = "TASK-AUTO",
+        origin: "SourceOrigin" = None,
+        raise_on_violation: Optional[bool] = None,
+    ) -> GuardVerdict:
+        """Extended protection with 3-Way Matching and idempotency enforcement.
+
+        Runs the full 5-tier CIV/AuthGraph defense PLUS:
+          - 3-Way Matching: invoice amount must match PO commitment + goods receipt.
+          - Idempotency: same invoice key cannot be submitted twice (replay prevention).
+
+        Args:
+            task_query: The authenticated user task instruction.
+            context: Retrieved document context (untrusted).
+            purchase_order_number: PO reference number from the invoice.
+            invoice_amount: Dollar amount claimed on the invoice.
+            vendor_account: Vendor account number on the invoice.
+            idempotency_key: Optional unique key to prevent duplicate submissions.
+            task_id: Task identifier for audit logging.
+            origin: Source origin of the context (defaults to UNTRUSTED_WEB).
+            raise_on_violation: Override instance raise_on_violation setting.
+
+        Returns:
+            GuardVerdict with is_approved=True only if ALL checks pass.
+        """
+        from agent_poi.memory.schema import SourceOrigin as _SourceOrigin
+        effective_origin = origin or _SourceOrigin.UNTRUSTED_WEB
+
+        extra_violations: list = []
+
+        # Check idempotency — reject duplicate invoice submissions
+        if idempotency_key is not None:
+            is_fresh = self.anchor.register_idempotency_key(idempotency_key, task_id)
+            if not is_fresh:
+                extra_violations.append(
+                    f"IDEMPOTENCY VIOLATION: Key '{idempotency_key}' was already processed. "
+                    "Duplicate invoice submission or replay attack detected."
+                )
+
+        # 3-Way Matching check
+        if not extra_violations:
+            is_matched, match_violations = self.anchor.validate_three_way_match(
+                po_number=purchase_order_number,
+                invoice_amount=invoice_amount,
+                to_account=vendor_account,
+            )
+            extra_violations.extend(match_violations)
+
+        # If pre-flight 3-Way Match or idempotency failed, short-circuit with a BLOCKED verdict
+        if extra_violations:
+            from dataclasses import replace as _replace
+            verdict = GuardVerdict(
+                is_approved=False,
+                status="BLOCKED",
+                task_id=task_id,
+                violations=extra_violations,
+                action_taken="blocked_pre_flight",
+                disbursement_executed=False,
+            )
+            should_raise = self.raise_on_violation if raise_on_violation is None else raise_on_violation
+            if should_raise:
+                self._raise_violation_error(verdict)
+            return verdict
+
+        # All pre-flight checks passed — run the full 5-tier defense
+        return self.protect(
+            task_query=task_query,
+            context=context,
+            task_id=task_id,
+            origin=effective_origin,
+            raise_on_violation=raise_on_violation,
+        )

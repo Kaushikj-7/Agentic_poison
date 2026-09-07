@@ -159,23 +159,23 @@ TOTAL SCENARIOS EVALUATED: 60 | ASR-Exec: 0.0% | LDSR: 100.0% | CDR: 0.0%
 ```mermaid
 flowchart LR
     subgraph ContextSpace ["Untrusted Context Space C_t"]
-        Doc["Retrieved Document / Invoice"]
+        Doc["Retrieved Document / Invoice\n(Email, Memo, Scraped Web)"]
     end
 
     subgraph DefenseBoundary ["AgentPOI Epistemic Boundary"]
-        DeltaExt["1. Delta Extractor\nΔ(c) = ⟨p*, δa, α⟩"]
+        DeltaExt["1. Delta Extractor\nΔ(c) = ⟨p*, δa, α, IdempKey, CapToken⟩"]
         TSGate["2. Task Shield Gate\nScore = cos(m,q) - α·Div"]
-        CIVVer["3. Contextual Invariant Verifier\nCheck vs S₀ Invariants"]
-        AuthDAG["4. AuthGraph Lineage\nSHA-256 Provenance Chain"]
+        CIVVer["3. Contextual Invariant Verifier\n3-Way Match & S₀ State Anchors"]
+        AuthDAG["4. AuthGraph Provenance\nSHA-256 Chaining & ARGUS Lineage"]
     end
 
     subgraph TrustAnchor ["Immutable Anchor S₀"]
-        S0[("Verified Payee Registry\nTransaction & Daily Ceilings\nAuthorized Signers")]
+        S0[("Verified Payee Registry\nTransaction & Daily Ceilings\n3-Way Matching PO Registry\nIdempotency Key Store")]
     end
 
     subgraph ProtectedSink ["Protected Execution Sink"]
-        Sink{"Disbursement Sink\n1. Target ∈ S₀ Registry?\n2. Amount ≤ Caps?\n3. Path(S₀) unbroken?"}
-        Ledger[("Immutable Audit Ledger")]
+        Sink{"Disbursement Sink\n1. Target ∈ S₀ Registry?\n2. PO Matched & Valid?\n3. Path(S₀) unbroken?"}
+        Ledger[("Double-Entry Cryptographic Ledger")]
         Block["Quarantine / Block Event"]
     end
 
@@ -195,20 +195,43 @@ flowchart LR
 ```
 
 1. **Context Space ($\mathcal{C}_t$):** Contains untrusted language model prompts, retrieved memos, and emails. Language models are prohibited from directly invoking transactional sinks.
-2. **Delta Extractor ($\Delta(c)$):** Distills unstructured claims into a deterministic mutation 3-tuple $\Delta(c) = \langle p^*, \delta a, \alpha \rangle$ (recipient, disbursement amount, authorization claims).
+2. **Delta Extractor ($\Delta(c)$):** Distills unstructured claims into a deterministic mutation tuple $\Delta(c) = \langle p^*, \delta a, \alpha, \text{IdempKey}, \text{CapToken} \rangle$.
 3. **Task Shield Retrieval Gate (*ACL 2025*):** Computes semantic relevance while heavily penalizing unprompted imperative directives (*wire, transfer, remit*) that were not requested by the user query.
-4. **Immutable State Anchor ($\mathcal{S}_0$):** Maintains pre-verified vendor registries, per-vendor spending limits, and daily global transaction ceilings independently of the LLM context window.
-5. **Contextual Invariant Verifier (CIV):** Strictly verifies that $p^* \in \mathcal{S}_0$, $\delta a \le \text{limit}(p^*)$, and no self-asserted policy override is present.
+4. **Immutable State Anchor ($\mathcal{S}_0$):** Maintains pre-verified vendor registries, per-vendor spending limits, 3-way matching purchase orders, and daily transaction ceilings independently of the LLM context window.
+5. **Contextual Invariant Verifier (CIV):** Strictly verifies that $p^* \in \mathcal{S}_0$, $\delta a \le \text{limit}(p^*)$, valid PO obligation matching, and non-replay idempotency.
 6. **AuthGraph Cryptographic DAG (*arXiv:2605.26497*):** Chains every context node with SHA-256 parent hashes. Execution sinks verify that context lineage traces strictly to authenticated system roots.
 
 ---
 
-## 5. Verification & Testing
+## 5. Research-Driven Architecture Benchmarking & Reproducibility
 
-AgentPOI is built with a zero-hardware offline requirement. All 47 automated tests and dynamic benchmark runners execute 100% locally on standard CPU without requiring GPUs or external network calls.
+AgentPOI provides an automated research extraction and experimentation pipeline (`scripts/run_experiment_pipeline.py`) that synthesizes 5 distinct architecture candidates derived from our 21-paper corpus, benchmarks them against all 60 ground-truth scenarios, and automatically prunes temporary experiment branches:
+
+| Candidate ID | Architecture | Defense Layers | ASR-Exec (↓) | LDSR (↑) | CDR (↓) | Latency |
+|:---|:---|:---|:---:|:---:|:---:|:---:|
+| `ARCH-001` | **CIV-Baseline (Production)** | TaskShield + AuthGraph + CIV Anchor | **0.0%** | **100.0%** | **0.0%** | ~19.6ms |
+| `ARCH-002` | **CIV + ARGUS Influence** | TaskShield + ARGUS Argument Lineage | **0.0%** | **100.0%** | **0.0%** | ~19.8ms |
+| `ARCH-003` | **Dual-Firewall + CapSeal** | CapSeal Secret Mediation + 3-Way Match | **0.0%** | **100.0%** | **0.0%** | ~21.0ms |
+| `ARCH-004` | **CIV + Game-Theoretic Minimax** | DataSentinel Minimax + Causal Attribution | **0.0%** | **100.0%** | **0.0%** | ~25.0ms |
+| `ARCH-005` | **Fides IFC + Permissive Taint** | Lean Information Flow Control | **0.0%** | **100.0%** | **0.0%** | ~19.5ms |
+
+### Running the Experiment Pipeline:
+```bash
+# Execute automated research paper parsing, architecture synthesis, and benchmarking
+python scripts/run_experiment_pipeline.py
+
+# Check git staging hygiene with Git Guardian (pre-commit enforcement)
+python scripts/git_guardian.py
+```
+
+---
+
+## 6. Verification & Testing
+
+AgentPOI is built with a zero-hardware offline requirement. All 64 automated tests and dynamic benchmark runners execute 100% locally on standard CPU without requiring GPUs or external network calls.
 
 ```bash
-# Run unit test suite (47 tests)
+# Run unit test suite (64 tests)
 pytest tests/ -v
 
 # Run 60-scenario dynamic financial benchmark runner

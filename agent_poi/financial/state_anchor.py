@@ -109,6 +109,114 @@ class FinancialStateAnchor:
         # Immutable execution and audit ledger
         self.execution_ledger: List[Dict[str, Any]] = []
 
+        # Idempotency key registry — prevents replay attacks (invoice re-submission)
+        # Maps idempotency_key -> transaction_id of the first execution
+        self.idempotency_keys: Dict[str, str] = {}
+
+        # Purchase Order registry — enables 3-Way Matching enforcement
+        # Maps po_number -> {"vendor_account": str, "authorized_amount": float, "fulfilled": bool}
+        self.purchase_orders: Dict[str, Dict[str, Any]] = {}
+
+    def register_idempotency_key(self, key: str, tx_id: str) -> bool:
+        """Register a transaction idempotency key.
+
+        Returns True if this is a fresh key (safe to execute).
+        Returns False if the key was already used — replay attack detected.
+
+        Args:
+            key: Unique idempotency key (e.g., invoice_id + vendor_id hash).
+            tx_id: Transaction ID to associate with this key on first use.
+        """
+        if key in self.idempotency_keys:
+            return False  # Replay detected — same key submitted twice
+        self.idempotency_keys[key] = tx_id
+        return True
+
+    def register_purchase_order(
+        self,
+        po_number: str,
+        vendor_account: str,
+        authorized_amount: float,
+        goods_receipt_confirmed: bool = False,
+    ) -> None:
+        """Register a pre-approved Purchase Order for 3-Way Matching.
+
+        Args:
+            po_number: Unique PO reference number.
+            vendor_account: Vendor account number this PO is authorized for.
+            authorized_amount: Maximum authorized disbursement for this PO.
+            goods_receipt_confirmed: Whether goods/services were received.
+        """
+        self.purchase_orders[po_number] = {
+            "vendor_account": vendor_account,
+            "authorized_amount": authorized_amount,
+            "goods_receipt_confirmed": goods_receipt_confirmed,
+            "is_settled": False,
+        }
+
+    def validate_three_way_match(
+        self,
+        po_number: str,
+        invoice_amount: float,
+        to_account: str,
+        tolerance_pct: float = 0.02,
+    ) -> Tuple[bool, List[str]]:
+        """3-Way Matching: invoice must match PO commitment and goods receipt.
+
+        Validates:
+          1. PO exists and is not already settled.
+          2. Invoice amount ≤ authorized PO amount (within tolerance).
+          3. Goods/services receipt is confirmed.
+          4. Vendor account matches the PO's registered vendor.
+
+        Args:
+            po_number: PO reference from invoice.
+            invoice_amount: Amount claimed on the invoice.
+            to_account: Vendor account receiving payment.
+            tolerance_pct: Acceptable percentage deviation (default 2%).
+
+        Returns:
+            (is_matched, list_of_violations)
+        """
+        violations: List[str] = []
+
+        if po_number not in self.purchase_orders:
+            violations.append(
+                f"3-WAY MATCH FAIL: PO '{po_number}' not found in approved purchase orders."
+            )
+            return False, violations
+
+        po = self.purchase_orders[po_number]
+
+        if po["is_settled"]:
+            violations.append(
+                f"3-WAY MATCH FAIL: PO '{po_number}' has already been settled — replay/duplicate detected."
+            )
+
+        if po["vendor_account"] != to_account:
+            violations.append(
+                f"3-WAY MATCH FAIL: Invoice vendor account '{to_account}' "
+                f"does not match PO registered vendor '{po['vendor_account']}'."
+            )
+
+        authorized = po["authorized_amount"]
+        tolerance = authorized * tolerance_pct
+        if invoice_amount > authorized + tolerance:
+            violations.append(
+                f"3-WAY MATCH FAIL: Invoice amount ${invoice_amount:.2f} exceeds "
+                f"PO authorized amount ${authorized:.2f} (tolerance: ${tolerance:.2f})."
+            )
+
+        if not po["goods_receipt_confirmed"]:
+            violations.append(
+                f"3-WAY MATCH FAIL: Goods/services receipt not confirmed for PO '{po_number}'."
+            )
+
+        is_matched = len(violations) == 0
+        if is_matched:
+            po["is_settled"] = True  # Mark PO as settled to prevent double-payment
+        return is_matched, violations
+
     def is_payee_verified(self, account_number: str) -> bool:
         """Check if target account number exists in verified payee registry."""
         return account_number in self.verified_payees

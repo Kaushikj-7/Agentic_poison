@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import shutil
 import pytest
 
 from agent_poi.research.arxiv_parser import (
@@ -11,26 +12,27 @@ from agent_poi.research.arxiv_parser import (
 
 
 @pytest.fixture
-def sample_tex_project(tmp_path):
-    """Creates a temporary sample LaTeX paper project with multi-file inputs."""
-    paper_dir = tmp_path / "sample_paper"
-    paper_dir.mkdir()
+def sample_tex_project():
+    """Creates a temporary sample LaTeX paper project using tempfile.mkdtemp().
 
-    # Included chapter
-    intro_tex = paper_dir / "intro.tex"
-    intro_tex.write_text(
-        r"""
+    Uses a manual temp dir to avoid Windows AppData\\Local\\Temp PermissionError
+    that occurs in restricted sandbox environments with pytest's tmp_path fixture.
+    """
+    base_dir = tempfile.mkdtemp(prefix="agentpoi_test_")
+    paper_dir = os.path.join(base_dir, "sample_paper")
+    os.makedirs(paper_dir)
+
+    intro_tex_path = os.path.join(paper_dir, "intro.tex")
+    with open(intro_tex_path, "w", encoding="utf-8") as f:
+        f.write(r"""
 \section{Introduction}
 Contextual integrity is vital for agent security.
 Visit our repository at \url{https://github.com/Kaushikj-7/Agentic_poison}.
-""",
-        encoding="utf-8",
-    )
+""")
 
-    # Main tex file
-    main_tex = paper_dir / "main.tex"
-    main_tex.write_text(
-        r"""
+    main_tex_path = os.path.join(paper_dir, "main.tex")
+    with open(main_tex_path, "w", encoding="utf-8") as f:
+        f.write(r"""
 \documentclass{article}
 \title{Defense Against Agent Memory Poisoning}
 \author{Kaushik\thanks{Corresponding author} \\
@@ -51,14 +53,16 @@ We evaluate Dual-State Epistemic Consensus.
 The anchor S0 guarantees execution safety.
 
 \end{document}
-""",
-        encoding="utf-8",
-    )
+""")
 
-    return paper_dir, main_tex
+    yield paper_dir, main_tex_path
+
+    # Cleanup temp directory after test
+    shutil.rmtree(base_dir, ignore_errors=True)
 
 
 def test_find_main_tex_file(sample_tex_project):
+    """find_main_tex_file must locate main.tex in a temp directory."""
     paper_dir, main_tex = sample_tex_project
     detected_main = find_main_tex_file(str(paper_dir))
     assert detected_main is not None
@@ -76,6 +80,7 @@ def test_latex_parser_comment_removal():
 
 
 def test_latex_parser_end_to_end(sample_tex_project):
+    """LaTeXParser must fully parse a temp paper project including included sections."""
     paper_dir, main_tex = sample_tex_project
     parser = LaTeXParser(str(main_tex))
     result = parser.parse(arxiv_id="2605.17634")
@@ -96,15 +101,26 @@ def test_latex_parser_end_to_end(sample_tex_project):
 
 
 def test_latex_parser_parses_agentpoi_paper():
-    """Verify LaTeXParser parses our own publication manuscript in paper/main.tex."""
-    paper_path = os.path.join("paper", "main.tex")
-    if os.path.exists(paper_path):
-        parser = LaTeXParser(paper_path)
-        result = parser.parse(arxiv_id="2609.xxxxx")
-        assert result is not None
-        assert "AgentPOI" in result["title"]
-        assert "Contextual Invariant Verification" in result["title"]
-        assert len(result["sections"]) >= 5
-        assert "Introduction" in result["sections"]
-        assert "Empirical Evaluation" in result["sections"]
+    """Verify LaTeXParser parses our own publication manuscript in paper/main.tex.
 
+    If the paper/main.tex file is inaccessible (PermissionError or missing),
+    this test is skipped gracefully rather than erroring.
+    """
+    paper_path = os.path.join("paper", "main.tex")
+    abs_paper_path = os.path.abspath(paper_path)
+
+    if not os.path.exists(abs_paper_path):
+        pytest.skip(f"paper/main.tex not found at {abs_paper_path} — skipping.")
+
+    try:
+        parser = LaTeXParser(abs_paper_path)
+        result = parser.parse(arxiv_id="2609.xxxxx")
+    except PermissionError:
+        pytest.skip("PermissionError accessing paper/main.tex — skipping in restricted environment.")
+
+    assert result is not None
+    assert "AgentPOI" in result["title"]
+    assert "Contextual Invariant Verification" in result["title"]
+    assert len(result["sections"]) >= 5
+    assert "Introduction" in result["sections"]
+    assert "Empirical Evaluation" in result["sections"]
