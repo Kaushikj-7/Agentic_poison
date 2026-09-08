@@ -6,7 +6,7 @@ Grounded in Task Shield (ACL 2025).
 """
 
 import re
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Dict, Any
 from agent_poi.memory.schema import MemoryItem, FirewallDecision, FirewallStatus
 
 

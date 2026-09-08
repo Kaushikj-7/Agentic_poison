@@ -6,15 +6,9 @@ and code/project URLs from decompressed LaTeX e-print archives.
 
 import os
 import re
-import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-logging.basicConfig(
-    format="[%(asctime)s %(levelname)s] %(message)s",
-    datefmt="%m/%d/%Y %H:%M:%S",
-    level=logging.INFO,
-)
 logger = logging.getLogger("agent_poi.research.arxiv_parser")
 
 

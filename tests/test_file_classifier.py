@@ -6,8 +6,7 @@ Ensures the classifier correctly identifies:
 - NEVER_TRACK files (PDFs, binaries, secrets)
 """
 
-import pytest
-from agent_poi.core.file_classifier import classify_file, FileClass, audit_tracked_files
+from agent_poi.core.file_classifier import classify_file, FileClass
 
 
 class TestFileClassifierPublicFiles:
@@ -114,3 +113,8 @@ class TestFileClassifierDefaultBehavior:
 
     def test_unknown_markdown(self):
         assert classify_file("INTERNAL_NOTES.md") == FileClass.DEVELOPER_ONLY
+
+    def test_worktree_quarantine(self):
+        assert classify_file(".worktrees/wt-exp-001/file.py") == FileClass.NEVER_TRACK
+        assert classify_file("worktrees/wt-exp-001/file.py") == FileClass.NEVER_TRACK
+        assert classify_file("data/redteam_results/EXP-01.json") == FileClass.NEVER_TRACK

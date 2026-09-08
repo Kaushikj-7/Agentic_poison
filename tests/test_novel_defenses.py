@@ -171,8 +171,62 @@ class TestProtectWithPO:
             task_id="TASK-PO-001",
         )
         assert isinstance(verdict, GuardVerdict)
-        # Verdict status tracked — not necessarily approved (depends on CIV flow)
+        assert verdict.is_approved is True
+        assert verdict.status == "APPROVED"
+        assert verdict.disbursement_executed is True
         assert verdict.task_id == "TASK-PO-001"
+
+    def test_nan_invoice_amount_rejected(self, guard_with_po):
+        """Non-finite NaN amount in 3-Way Match must fail closed and be blocked."""
+        verdict = guard_with_po.protect_with_po(
+            task_query="Process invoice",
+            context="Invoice INV-NAN: Amount NaN to account 1122-3344-55",
+            purchase_order_number="PO-FACADE-001",
+            invoice_amount=float("nan"),
+            vendor_account="1122-3344-55",
+            task_id="TASK-NAN",
+        )
+        assert not verdict.is_approved
+        assert verdict.status == "BLOCKED"
+        assert any("non-finite" in v.lower() or "invalid" in v.lower() for v in verdict.violations)
+
+    def test_infinite_invoice_amount_rejected(self, guard_with_po):
+        """Non-finite infinity amount in 3-Way Match must fail closed."""
+        verdict = guard_with_po.protect_with_po(
+            task_query="Process invoice",
+            context="Invoice INV-INF",
+            purchase_order_number="PO-FACADE-001",
+            invoice_amount=float("inf"),
+            vendor_account="1122-3344-55",
+            task_id="TASK-INF",
+        )
+        assert not verdict.is_approved
+        assert verdict.status == "BLOCKED"
+        assert any("non-finite" in v.lower() or "invalid" in v.lower() for v in verdict.violations)
+
+    def test_negative_or_zero_invoice_amount_rejected(self, guard_with_po):
+        """Zero or negative invoice amount must be rejected by 3-Way Matching."""
+        verdict_zero = guard_with_po.protect_with_po(
+            task_query="Process invoice",
+            context="Invoice INV-ZERO",
+            purchase_order_number="PO-FACADE-001",
+            invoice_amount=0.0,
+            vendor_account="1122-3344-55",
+            task_id="TASK-ZERO",
+        )
+        assert not verdict_zero.is_approved
+        assert verdict_zero.status == "BLOCKED"
+
+        verdict_neg = guard_with_po.protect_with_po(
+            task_query="Process invoice",
+            context="Invoice INV-NEG",
+            purchase_order_number="PO-FACADE-001",
+            invoice_amount=-500.0,
+            vendor_account="1122-3344-55",
+            task_id="TASK-NEG",
+        )
+        assert not verdict_neg.is_approved
+        assert verdict_neg.status == "BLOCKED"
 
     def test_unknown_po_returns_blocked_verdict(self, guard_with_po):
         """Invoice with unknown PO must be blocked before reaching CIV."""
@@ -228,11 +282,13 @@ class TestArchitectureRanker:
     """Validates ArchitectureRanker produces dynamic, well-formed rankings."""
 
     @pytest.fixture(scope="class")
-    def ranker(self):
+    @classmethod
+    def ranker(cls):
         return ArchitectureRanker()
 
     @pytest.fixture(scope="class")
-    def scores(self, ranker):
+    @classmethod
+    def scores(cls, ranker):
         return ranker.rank_all_components()
 
     def test_returns_all_components(self, scores):

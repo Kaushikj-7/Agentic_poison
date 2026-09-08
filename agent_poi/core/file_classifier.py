@@ -10,12 +10,9 @@ stay local unless explicitly whitelisted as PUBLIC.
 """
 
 import fnmatch
-import logging
 import subprocess
 from enum import Enum
 from typing import List, Tuple
-
-logger = logging.getLogger("agent_poi.core.file_classifier")
 
 
 class FileClass(str, Enum):
@@ -98,8 +95,14 @@ NEVER_TRACK_RULES: List[str] = [
     # Generated research & experiment data
     "data/research_extracts/**",
     "data/experiment_results/**",
+    "data/redteam_results/**",
     "experiment_reports/**",
     ".experiment_state/**",
+    # Git worktrees & isolated benchmark trees
+    ".worktrees/**",
+    ".worktrees/*",
+    "worktrees/**",
+    "worktrees/*",
 ]
 
 DEVELOPER_ONLY_RULES: List[str] = [
@@ -149,6 +152,7 @@ PUBLIC_EXPLICIT: List[str] = [
     "scripts/ci_check.py",
     "scripts/git_guardian.py",
     "scripts/run_experiment_pipeline.py",
+    "scripts/run_worktree_redteam.py",
 ]
 
 

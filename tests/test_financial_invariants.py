@@ -1,7 +1,6 @@
 """Unit tests for Single-Domain Financial Invariant Verification (CIV) & DSEC."""
 
-import pytest
-from agent_poi.financial.state_anchor import FinancialStateAnchor, PayeeAccount
+from agent_poi.financial.state_anchor import FinancialStateAnchor
 from agent_poi.financial.delta_extractor import FinancialDeltaExtractor
 from agent_poi.financial.invariant_verifier import InvariantVerifier
 from agent_poi.financial.financial_agent import FinancialAgent

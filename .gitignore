@@ -147,3 +147,10 @@ uv.lock
 .pytest_tmp/
 .experiment_state/
 
+# -----------------------------------------------------------------------------
+# 14. Git Worktrees & Red-Team Results (Local only)
+# -----------------------------------------------------------------------------
+.worktrees/
+worktrees/
+data/redteam_results/
+

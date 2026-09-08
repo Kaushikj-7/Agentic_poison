@@ -9,10 +9,9 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from agent_poi.financial.state_anchor import FinancialStateAnchor
 from agent_poi.financial.invariant_verifier import InvariantVerifier, InvariantVerificationResult
-from agent_poi.financial.delta_extractor import ContextualFinancialDelta
+from agent_poi.financial.delta_extractor import ContextualFinancialDelta, FinancialDeltaExtractor
 from agent_poi.financial.logger import get_financial_logger, log_audit_event
 from agent_poi.financial.exceptions import (
-    FinancialSecurityError,
     InvariantViolationError,
     UnauthorizedPayeeError,
     DisbursementCeilingExceededError,
@@ -52,6 +51,7 @@ class FinancialAgent:
         self.logger = get_financial_logger("agent_poi.financial.agent")
         self.anchor = state_anchor or FinancialStateAnchor()
         self.verifier = InvariantVerifier(self.anchor)
+        self.delta_extractor = self.verifier.extractor
 
         fin_cfg = get_financial_domain_config()
         cfg_divergence = fin_cfg.get("max_divergence_risk", 0.35)

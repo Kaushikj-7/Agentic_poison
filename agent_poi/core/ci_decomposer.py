@@ -110,7 +110,7 @@ class CIDecomposer:
             },
         )
 
-    def compute_risk_score(self, ci_partition: CIPartition) -> Tuple[float, list[str]]:
+    def compute_risk_score(self, ci_partition: CIPartition) -> Tuple[float, List[str]]:
         """Compute the aggregate Contextual Integrity risk score R_ci in [0, 1]."""
         reasons = []
 

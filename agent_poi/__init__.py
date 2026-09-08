@@ -24,6 +24,15 @@ from agent_poi.evaluation.framework_comparison import (
     FrameworkBenchmarkResult,
 )
 from agent_poi.research.arxiv_parser import LaTeXParser
+from agent_poi.evaluation.deepteam_redteam import (
+    DeepTeamFinancialAdapter,
+    DeepTeamRedTeamRunner,
+    RedTeamBenchmarkResult,
+)
+from agent_poi.research.worktree_runner import (
+    GitWorktreeManager,
+    WorktreeBenchmarkOrchestrator,
+)
 
 __version__ = "1.0.0"
 
@@ -44,6 +53,11 @@ __all__ = [
     "FrameworkComparisonRunner",
     "FrameworkBenchmarkResult",
     "LaTeXParser",
+    "DeepTeamFinancialAdapter",
+    "DeepTeamRedTeamRunner",
+    "RedTeamBenchmarkResult",
+    "GitWorktreeManager",
+    "WorktreeBenchmarkOrchestrator",
     "FinancialSecurityError",
     "InvariantViolationError",
     "UnauthorizedPayeeError",

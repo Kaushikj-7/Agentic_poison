@@ -1,6 +1,5 @@
 """Unit tests verifying unbiased 60-scenario financial benchmark execution."""
 
-import pytest
 from agent_poi.financial.eval.financial_dataset import FinancialBenchmarkDataset
 from agent_poi.financial.eval.financial_benchmark import FinancialBenchmarkRunner
 

@@ -1,6 +1,5 @@
 """Unit tests for the architectural ablation study runner."""
 
-import pytest
 from agent_poi.evaluation.framework_comparison import FrameworkComparisonRunner
 from agent_poi.financial.eval.financial_dataset import FinancialBenchmarkDataset
 

@@ -5,8 +5,6 @@ Applies perturbation techniques to camouflage payloads:
 2. Authority reframing (disguising transmission principle as ISO/compliance protocols)
 3. Morphological cloaking (rephrasing imperatives as passive historical facts)
 """
-
-from typing import List
 from agent_poi.attacks.attack_generator import AttackPayload
 
 

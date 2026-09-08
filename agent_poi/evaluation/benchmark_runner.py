@@ -9,7 +9,7 @@ Runs the full ablation matrix across:
 Measures: ASR-write, ASR-retrieval, ASR-exec, False Quarantine Rate (FQR).
 """
 
-from typing import Dict, List, Any
+from typing import List, Optional
 from pydantic import BaseModel
 from agent_poi.memory.schema import FirewallStatus, SourceOrigin
 from agent_poi.memory.memory_firewall import MemoryFirewall
@@ -31,7 +31,7 @@ class AblationResult(BaseModel):
 class BenchmarkRunner:
     """Orchestrates comprehensive unconfounded ablation benchmarking."""
 
-    def __init__(self, pairs: List[BenchmarkPair] = None):
+    def __init__(self, pairs: Optional[List[BenchmarkPair]] = None):
         self.pairs = pairs or PairedDataset.get_all_pairs()
 
     def evaluate_configuration(

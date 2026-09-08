@@ -100,7 +100,8 @@ class TestAblationMonotonicity:
     """Validates the ablation study ordering and structural invariants."""
 
     @pytest.fixture(scope="class")
-    def ablation_results(self):
+    @classmethod
+    def ablation_results(cls):
         """Run the real ablation study once for all monotonicity tests."""
         runner = FrameworkComparisonRunner()
         return runner.run_ablation_study()

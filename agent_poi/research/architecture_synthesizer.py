@@ -5,12 +5,9 @@ using system design principles: separation of concerns, defense-in-depth,
 fail-closed semantics, least privilege, and Pareto-optimal trade-offs.
 """
 
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List
-
-logger = logging.getLogger("agent_poi.research.architecture_synthesizer")
 
 
 @dataclass

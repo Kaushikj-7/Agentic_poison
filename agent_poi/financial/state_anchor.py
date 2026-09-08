@@ -154,6 +154,18 @@ class FinancialStateAnchor:
             "is_settled": False,
         }
 
+    def _validate_invoice_amount_finite(self, amount: float) -> Tuple[bool, List[str]]:
+        """Verify amount is a strictly positive, finite float."""
+        violations: List[str] = []
+        is_numeric = isinstance(amount, (int, float)) and not isinstance(amount, bool)
+        if not is_numeric or math.isnan(amount) or math.isinf(amount):
+            violations.append("3-WAY MATCH FAIL: Invoice amount is non-finite or invalid.")
+            return False, violations
+        if amount <= 0:
+            violations.append(f"3-WAY MATCH FAIL: Invoice amount ${amount:.2f} must be strictly positive.")
+            return False, violations
+        return True, violations
+
     def validate_three_way_match(
         self,
         po_number: str,
@@ -165,20 +177,16 @@ class FinancialStateAnchor:
 
         Validates:
           1. PO exists and is not already settled.
-          2. Invoice amount ≤ authorized PO amount (within tolerance).
-          3. Goods/services receipt is confirmed.
-          4. Vendor account matches the PO's registered vendor.
-
-        Args:
-            po_number: PO reference from invoice.
-            invoice_amount: Amount claimed on the invoice.
-            to_account: Vendor account receiving payment.
-            tolerance_pct: Acceptable percentage deviation (default 2%).
-
-        Returns:
-            (is_matched, list_of_violations)
+          2. Invoice amount is finite and positive.
+          3. Invoice amount <= authorized PO amount (within tolerance).
+          4. Goods/services receipt is confirmed.
+          5. Vendor account matches the PO's registered vendor.
         """
         violations: List[str] = []
+
+        is_finite, amt_viols = self._validate_invoice_amount_finite(invoice_amount)
+        if not is_finite:
+            return False, amt_viols
 
         if po_number not in self.purchase_orders:
             violations.append(
@@ -187,12 +195,10 @@ class FinancialStateAnchor:
             return False, violations
 
         po = self.purchase_orders[po_number]
-
         if po["is_settled"]:
             violations.append(
                 f"3-WAY MATCH FAIL: PO '{po_number}' has already been settled — replay/duplicate detected."
             )
-
         if po["vendor_account"] != to_account:
             violations.append(
                 f"3-WAY MATCH FAIL: Invoice vendor account '{to_account}' "
@@ -214,7 +220,7 @@ class FinancialStateAnchor:
 
         is_matched = len(violations) == 0
         if is_matched:
-            po["is_settled"] = True  # Mark PO as settled to prevent double-payment
+            po["is_settled"] = True
         return is_matched, violations
 
     def is_payee_verified(self, account_number: str) -> bool:
@@ -225,6 +231,26 @@ class FinancialStateAnchor:
         """Look up verified payee details."""
         return self.verified_payees.get(account_number)
 
+    def _check_disbursement_limits(self, amount: float, to_account: str) -> List[str]:
+        """Check payee-specific single limits and global cumulative ceilings."""
+        violations: List[str] = []
+        if self.is_payee_verified(to_account):
+            payee = self.verified_payees[to_account]
+            if amount > payee.max_single_disbursement:
+                violations.append(
+                    f"INVARIANT VIOLATION: Amount ${amount:.2f} exceeds payee '{payee.name}' single limit (${payee.max_single_disbursement:.2f})."
+                )
+        if amount > self.per_transaction_limit:
+            violations.append(
+                f"INVARIANT VIOLATION: Amount ${amount:.2f} exceeds global transaction limit (${self.per_transaction_limit:.2f})."
+            )
+        daily_executed = self.get_recent_daily_disbursements(window_seconds=86400.0)
+        if daily_executed + amount > self.daily_limit:
+            violations.append(
+                f"INVARIANT VIOLATION: Proposed disbursement ${amount:.2f} brings daily cumulative total (${daily_executed + amount:.2f}) over daily ceiling (${self.daily_limit:.2f})."
+            )
+        return violations
+
     def validate_disbursement(
         self,
         to_account: str,
@@ -232,60 +258,34 @@ class FinancialStateAnchor:
         claimed_auth: Optional[str] = None,
     ) -> Tuple[bool, List[str]]:
         """Verify disbursement proposal against the immutable anchor invariants."""
-        violations = []
-
-        # Invariant 0: Amount must be a strictly positive finite number
+        violations: List[str] = []
         is_numeric = isinstance(amount, (int, float)) and not isinstance(amount, bool)
         is_valid_amount = False
+
         if not is_numeric or math.isnan(amount) or math.isinf(amount):
-            violations.append(
-                "INVARIANT VIOLATION: Amount is not a valid finite number."
-            )
+            violations.append("INVARIANT VIOLATION: Amount is not a valid finite number.")
         elif amount <= 0:
-            violations.append(
-                f"INVARIANT VIOLATION: Amount ${amount:.2f} must be strictly positive."
-            )
+            violations.append(f"INVARIANT VIOLATION: Amount ${amount:.2f} must be strictly positive.")
         else:
             is_valid_amount = True
 
-        # Invariant 1: Payee must exist in verified registry
         if not self.is_payee_verified(to_account):
             violations.append(
                 f"INVARIANT VIOLATION: Target account '{to_account}' is NOT in verified payee registry."
             )
-        elif is_valid_amount:
-            payee = self.verified_payees[to_account]
-            # Invariant 2: Per-payee threshold check
-            if amount > payee.max_single_disbursement:
-                violations.append(
-                    f"INVARIANT VIOLATION: Amount ${amount:.2f} exceeds payee '{payee.name}' single limit (${payee.max_single_disbursement:.2f})."
-                )
 
         if is_valid_amount:
-            # Invariant 3: Global transaction ceiling
-            if amount > self.per_transaction_limit:
-                violations.append(
-                    f"INVARIANT VIOLATION: Amount ${amount:.2f} exceeds global transaction limit (${self.per_transaction_limit:.2f})."
-                )
+            violations.extend(self._check_disbursement_limits(amount, to_account))
 
-            # Invariant 3b: Cumulative daily disbursement ceiling (rolling 24-hour window)
-            daily_executed = self.get_recent_daily_disbursements(window_seconds=86400.0)
-            if daily_executed + amount > self.daily_limit:
-                violations.append(
-                    f"INVARIANT VIOLATION: Proposed disbursement ${amount:.2f} brings daily cumulative total (${daily_executed + amount:.2f}) over daily ceiling (${self.daily_limit:.2f})."
-                )
-
-        # Invariant 4: Disallow self-asserted unverified authorization claims
         if claimed_auth and any(
-            override_flag in claimed_auth.lower()
-            for override_flag in ["override", "pre-approved", "bypass", "emergency exception", "verbal agreement"]
+            flag in claimed_auth.lower()
+            for flag in ["override", "pre-approved", "bypass", "emergency exception", "verbal agreement"]
         ):
             violations.append(
                 f"INVARIANT VIOLATION: Self-asserted authorization claim detected in passive context: '{claimed_auth}'."
             )
 
-        is_valid = len(violations) == 0
-        return is_valid, violations
+        return len(violations) == 0, violations
 
     def get_recent_daily_disbursements(self, window_seconds: float = 86400.0) -> float:
         """Calculate cumulative disbursements executed within a rolling 24-hour UTC window."""

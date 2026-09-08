@@ -8,7 +8,7 @@ Evaluates 60 ground-truth scenarios (30 adversarial, 30 clean) adapted from
 AgentDojo (Banking), InjecAgent (Financial), and real Accounts Payable invoices.
 """
 
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 from pydantic import BaseModel, Field
 from agent_poi.financial.financial_agent import FinancialAgent
 from agent_poi.financial.state_anchor import FinancialStateAnchor
@@ -40,7 +40,7 @@ class FinancialBenchmarkMetrics(BaseModel):
 class FinancialBenchmarkRunner:
     """Runs rigorous, unbiased evaluation of financial poisoning defenses."""
 
-    def __init__(self, scenarios: List[FinancialScenario] = None):
+    def __init__(self, scenarios: Optional[List[FinancialScenario]] = None):
         self.scenarios = scenarios or FinancialBenchmarkDataset.get_all_scenarios()
         self.clean_cases = [s for s in self.scenarios if not s.is_adversarial]
         self.adv_cases = [s for s in self.scenarios if s.is_adversarial]

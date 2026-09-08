@@ -14,7 +14,6 @@ Workflow:
 
 import os
 import sys
-import logging
 
 workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if workspace_root not in sys.path:
@@ -26,14 +25,8 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from agent_poi.research.pdf_parser import parse_all_papers
-from agent_poi.research.architecture_synthesizer import (
-    ArchitectureSynthesizer,
-    CandidateArchitecture,
-)
+from agent_poi.research.architecture_synthesizer import ArchitectureSynthesizer
 from agent_poi.research.experiment_runner import ExperimentOrchestrator
-
-logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
-logger = logging.getLogger("experiment_pipeline")
 
 
 def main():

@@ -1,7 +1,6 @@
 """TDD Unit Tests for AuthGraph (arXiv:2605.26497) Cryptographic Lineage & Sink Verification."""
 
-import pytest
-from agent_poi.core.taint_tracker import AuthGraphNode, AuthGraphDAG, TaintTracker
+from agent_poi.core.taint_tracker import AuthGraphNode, AuthGraphDAG
 from agent_poi.memory.schema import SourceOrigin
 
 
@@ -99,4 +98,54 @@ def test_authgraph_sink_verification_detects_hash_tampering():
     )
     assert is_valid is False
     assert any("tampering detected" in r for r in reasons)
+
+
+def test_authgraph_parent_ids_tamper_detected():
+    """Mutating parent_ids without updating sha256_hash must fail tamper check."""
+    dag = AuthGraphDAG()
+    root = dag.add_node("Root anchor", SourceOrigin.SYSTEM_INSTRUCTION, is_authorized_root=True)
+    other = dag.add_node("Other root", SourceOrigin.SYSTEM_INSTRUCTION, is_authorized_root=True)
+    child = dag.add_node("Child step", SourceOrigin.INTERNAL_TOOL, parent_ids=[root.node_id])
+
+    # Attacker attempts to swap parent_ids to other without updating sha256_hash
+    child.parent_ids = [other.node_id]
+
+    is_valid, reasons = dag.verify_sink_authorization(
+        contributing_node_ids=[child.node_id],
+        required_root_authority=SourceOrigin.SYSTEM_INSTRUCTION,
+    )
+    assert is_valid is False
+    assert any("tampering detected" in r for r in reasons)
+
+
+def test_authgraph_parent_hash_mismatch_detected():
+    """If a child's parent_hashes does not match the actual parent's current hash, fail verification."""
+    dag = AuthGraphDAG()
+    root = dag.add_node("Root anchor", SourceOrigin.SYSTEM_INSTRUCTION, is_authorized_root=True)
+    child = dag.add_node("Child step", SourceOrigin.INTERNAL_TOOL, parent_ids=[root.node_id])
+
+    # Corrupt parent's hash inside dag after child was minted
+    root.sha256_hash = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+
+    is_valid, reasons = dag.verify_sink_authorization(
+        contributing_node_ids=[child.node_id],
+        required_root_authority=SourceOrigin.SYSTEM_INSTRUCTION,
+    )
+    assert is_valid is False
+
+
+def test_authgraph_sink_verification_none_or_empty_nodes():
+    """Empty or None contributing nodes must safely return False without exceptions."""
+    dag = AuthGraphDAG()
+    is_valid, reasons = dag.verify_sink_authorization(
+        contributing_node_ids=None,
+        required_root_authority=SourceOrigin.SYSTEM_INSTRUCTION,
+    )
+    assert is_valid is False
+
+    is_valid, reasons = dag.verify_sink_authorization(
+        contributing_node_ids=[],
+        required_root_authority=SourceOrigin.SYSTEM_INSTRUCTION,
+    )
+    assert is_valid is False
 

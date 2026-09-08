@@ -1,8 +1,6 @@
 """Tests for the PDF Research Paper Parser."""
 
-import pytest
-import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from agent_poi.research.pdf_parser import PDFPaperParser
 
 

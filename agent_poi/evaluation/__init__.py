@@ -7,6 +7,14 @@ from agent_poi.evaluation.framework_comparison import (
     FrameworkComparisonRunner,
     FrameworkBenchmarkResult,
 )
+from agent_poi.evaluation.advanced_experiments import AdvancedExperimentRunner
+from agent_poi.evaluation.deepteam_redteam import (
+    DeepTeamFinancialAdapter,
+    DeepTeamRedTeamRunner,
+    RedTeamVulnerabilityCategory,
+    RedTeamAttackMethod,
+    RedTeamBenchmarkResult,
+)
 
 __all__ = [
     "PairedDataset",
@@ -15,5 +23,11 @@ __all__ = [
     "ParetoSweeper",
     "FrameworkComparisonRunner",
     "FrameworkBenchmarkResult",
+    "AdvancedExperimentRunner",
+    "DeepTeamFinancialAdapter",
+    "DeepTeamRedTeamRunner",
+    "RedTeamVulnerabilityCategory",
+    "RedTeamAttackMethod",
+    "RedTeamBenchmarkResult",
 ]
 

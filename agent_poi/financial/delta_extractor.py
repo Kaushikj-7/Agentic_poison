@@ -6,7 +6,7 @@ from unstructured text context, emails, invoices, and memory items.
 
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 
 @dataclass
@@ -58,22 +58,18 @@ class FinancialDeltaExtractor:
         r"(?:verbal\s+agreement|special\s+dispensation|out-?of-?band\s+clearance)",
     ]
 
-    def extract(self, text: str) -> ContextualFinancialDelta:
-        """Parse raw text into a structured ContextualFinancialDelta."""
-        if not isinstance(text, str):
-            text = str(text or "")
-        text_lower = text.lower()
+    MAX_CONTEXT_LENGTH = 50_000
 
-        # 1. Extract Target Account
-        target_account = None
+    def _extract_target_account(self, text: str) -> Optional[str]:
+        """Extract matching target vendor account number."""
         for pat in self.ACCOUNT_PATTERNS:
             match = re.search(pat, text, flags=re.IGNORECASE)
             if match:
-                target_account = match.group(1).strip()
-                break
+                return match.group(1).strip()
+        return None
 
-        # 2. Extract Amount (with multi-currency and sign support)
-        amount = None
+    def _extract_amount(self, text: str) -> Optional[float]:
+        """Extract currency amount with multi-currency and sign support."""
         for pat in self.AMOUNT_PATTERNS:
             match = re.search(pat, text, flags=re.IGNORECASE)
             if match:
@@ -81,32 +77,41 @@ class FinancialDeltaExtractor:
                 sign = -1.0 if any(g == "-" for g in groups) else 1.0
                 num_str = next((g for g in reversed(groups) if g and any(c.isdigit() for c in g)), None)
                 if num_str:
-                    raw_amt = num_str.replace(",", "")
                     try:
-                        amount = sign * float(raw_amt)
-                        break
+                        return sign * float(num_str.replace(",", ""))
                     except ValueError:
                         continue
+        return None
 
-        # 3. Extract Invoice ID
-        invoice_id = None
+    def _extract_invoice_id(self, text: str) -> Optional[str]:
+        """Extract invoice or PO reference number."""
         for pat in self.INVOICE_PATTERNS:
             match = re.search(pat, text, flags=re.IGNORECASE)
             if match:
-                invoice_id = match.group(1).strip()
-                break
+                return match.group(1).strip()
+        return None
 
-        # 4. Extract Claimed Authority
-        claimed_auth = None
-        has_override = False
+    def _extract_authority(self, text_lower: str) -> Tuple[Optional[str], bool]:
+        """Detect authority claims and override attempts."""
         for pat in self.AUTHORITY_PATTERNS:
             match = re.search(pat, text_lower)
             if match:
-                claimed_auth = match.group(0).strip()
-                has_override = True
-                break
+                return match.group(0).strip(), True
+        return None, False
 
-        # 5. Inferred Intent
+    def extract(self, text: str) -> ContextualFinancialDelta:
+        """Parse raw text into a structured ContextualFinancialDelta."""
+        if not isinstance(text, str):
+            text = str(text or "")
+        if len(text) > self.MAX_CONTEXT_LENGTH:
+            text = text[:self.MAX_CONTEXT_LENGTH]
+        text_lower = text.lower()
+
+        target_account = self._extract_target_account(text)
+        amount = self._extract_amount(text)
+        invoice_id = self._extract_invoice_id(text)
+        claimed_auth, has_override = self._extract_authority(text_lower)
+
         if target_account is not None or amount is not None:
             intent = "disbursement"
         elif invoice_id:

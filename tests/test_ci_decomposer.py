@@ -1,6 +1,5 @@
 """Unit tests for Contextual Integrity (CI) Parameter Decomposer."""
 
-import pytest
 from agent_poi.core.ci_decomposer import CIDecomposer
 from agent_poi.memory.schema import SourceOrigin
 

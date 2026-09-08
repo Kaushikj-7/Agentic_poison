@@ -93,11 +93,6 @@ def _resolve_config_path(override_path: Optional[str] = None) -> Optional[str]:
     return None
 
 
-_CONFIG_PATH = _resolve_config_path() or os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-)
-
-
 @lru_cache(maxsize=4)
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     """Load configuration dictionary from YAML file, falling back to embedded defaults."""
@@ -108,8 +103,11 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
                 data = yaml.safe_load(f)
             if isinstance(data, dict) and data:
                 return data
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger("agent_poi.core.config_loader").warning(
+                "Failed to parse config YAML at %s: %s. Falling back to defaults.", target_path, exc
+            )
 
     return copy.deepcopy(DEFAULT_CONFIG)
 

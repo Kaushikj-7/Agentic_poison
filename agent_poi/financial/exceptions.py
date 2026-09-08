@@ -33,11 +33,13 @@ class UnauthorizedPayeeError(InvariantViolationError):
 class DisbursementCeilingExceededError(InvariantViolationError):
     """Raised when an implied disbursement exceeds transaction or daily ceilings."""
 
-    def __init__(self, amount: float, limit: float, details: Optional[Dict[str, Any]] = None):
-        msg = f"Ceiling Exceeded: Requested disbursement ${amount:,.2f} exceeds limit of ${limit:,.2f}."
+    def __init__(self, amount: Optional[float] = None, limit: Optional[float] = None, details: Optional[Dict[str, Any]] = None):
+        amt = amount if isinstance(amount, (int, float)) else 0.0
+        lim = limit if isinstance(limit, (int, float)) else 0.0
+        msg = f"Ceiling Exceeded: Requested disbursement ${amt:,.2f} exceeds limit of ${lim:,.2f}."
         super().__init__(msg, details)
-        self.amount = amount
-        self.limit = limit
+        self.amount = amt
+        self.limit = lim
 
 
 class UntrustedLineageError(FinancialSecurityError):

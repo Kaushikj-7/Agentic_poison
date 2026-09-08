@@ -4,7 +4,7 @@ Implements iterative adversarial search where the attacker refines mutations
 to test whether the firewall degrades under adaptive pressure (Abdelnabi & Bagdasarian 2026).
 """
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 from agent_poi.attacks.attack_generator import AttackPayload
 from agent_poi.attacks.tier2_adaptive.adaptive_mutator import AdaptiveMutator
 from agent_poi.memory.memory_firewall import MemoryFirewall

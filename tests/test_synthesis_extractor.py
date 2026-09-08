@@ -1,10 +1,8 @@
 """Unit tests for the research synthesis and paper metadata extractor."""
 
-import pytest
 from agent_poi.research.synthesis_extractor import (
     ResearchPaperMetadata,
     ResearchSynthesisExtractor,
-    DomainAdaptationRecord,
 )
 
 

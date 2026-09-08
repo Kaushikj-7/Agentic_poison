@@ -1,6 +1,5 @@
 """Unit tests for adversarial attack generators and adaptive mutators."""
 
-import pytest
 from agent_poi.attacks import (
     MINJAAttack,
     SleeperPoisonAttack,

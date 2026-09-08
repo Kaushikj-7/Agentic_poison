@@ -11,7 +11,7 @@ and BibTeX generation for the core academic literature referenced by AgentPOI:
 """
 
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ResearchPaperMetadata(BaseModel):

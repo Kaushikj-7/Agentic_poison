@@ -1,11 +1,9 @@
 """Tests for the Experiment Runner and Git Branch Manager."""
 
-import pytest
 from unittest.mock import patch, MagicMock
 from agent_poi.research.experiment_runner import (
     ExperimentResult,
     GitBranchManager,
-    ExperimentOrchestrator,
 )
 
 

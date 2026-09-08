@@ -7,7 +7,6 @@ Those methods have been removed as benchmark fraud.
 These tests now verify the honest ablation study and report formatters.
 """
 
-import pytest
 from agent_poi.evaluation.framework_comparison import (
     FrameworkComparisonRunner,
     FrameworkBenchmarkResult,

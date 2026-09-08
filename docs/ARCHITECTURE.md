@@ -2,169 +2,213 @@
 
 ## 1. Executive Summary & Epistemic Foundations
 
-Modern autonomous agents operating on financial, accounting, and transactional workloads combine untrusted external context (retrieved memories, vendor invoices, emails, web-scraped documents) with high-consequence execution sinks (`transfer_funds`, `process_wire`, `update_payee`). Under standard LLM architectures, an adversary capable of injecting indirect prompt instructions can manipulate the agent's reasoning loop into executing unauthorized transactions.
+Modern autonomous agents operating on financial, accounting, and transactional workloads combine untrusted external context (retrieved memories, vendor invoices, emails, webhooks, peer agent communications) with high-consequence execution sinks (`transfer_funds`, `process_wire`, `update_payee`, `disburse_escrow`). Under standard Large Language Model (LLM) architectures, an adversary capable of injecting indirect prompt instructions can manipulate the agent's internal reasoning loop into executing unauthorized transactions.
 
-**AgentPOI** resolves this vulnerability through **Dual-State Epistemic Consensus (DSEC)** and **Contextual Invariant Verification (CIV)**. Rather than attempting to detect all semantic injections in natural language—a problem formally shown to be intractable without utility loss (*Abdelnabi & Bagdasarian, arXiv:2605.17634*)—AgentPOI establishes an immutable, non-linguistic trust anchor against which all implied state mutations are validated prior to tool dispatch.
+Recent theoretical findings (*Abdelnabi & Bagdasarian, arXiv:2605.17634*) establish that natural-language prompt filtering alone cannot prevent indirect injection without prohibitive utility destruction on complex legitimate tasks.
+
+**AgentPOI** resolves this vulnerability through **Dual-State Epistemic Consensus (DSEC)** and **Contextual Invariant Verification (CIV)**. Rather than attempting to detect all semantic injection vectors in natural language, AgentPOI establishes an out-of-band immutable State Anchor ($\mathcal{S}_0$) against which all implied state mutations are validated prior to execution sink dispatch. High-consequence disbursements are approved if and only if both contextual admission gating and execution sink invariant verification succeed with zero violations.
 
 ---
 
-## 2. End-to-End System Architecture
+## 2. End-to-End System Architecture (arXiv Block Diagram)
+
+The following architectural block diagram depicts the end-to-end dataflow through the AgentPOI verification tiers. The architecture is strictly planar and staged, ensuring zero cross-tier edge entanglements:
 
 ```mermaid
 flowchart TD
-    subgraph S_UNTRUSTED ["UNTRUSTED CONTEXT ENVIRONMENT"]
-        DocIn["Input Document / Invoice c\n(Origin: Web / Email / Peer)"]
-        UserQ["User Task Query q\n(Origin: Authenticated Principal)"]
+    subgraph Stage0 ["Stage 0: Dual Input Ingestion"]
+        direction LR
+        UserQ["Authenticated Principal Query q\n(User / System Dispatch)"]
+        DocC["Untrusted Context c\n(Invoices, Emails, Webhooks, Memos)"]
     end
 
-    subgraph S_INGESTION ["TIER 1: CONTEXT INGESTION & DELTA EXTRACTION"]
-        Extractor["FinancialDeltaExtractor\nΔ(c) = ⟨p*, δa, α, IdempKey, CapToken⟩\n• Target Account p*\n• Amount δa\n• Claimed Authority α\n• Idempotency & Capability Token"]
-        DocIn --> Extractor
+    subgraph Stage1 ["Stage 1: Semantic Admission Gating (Task Shield, ACL 2025)"]
+        TSGate["Task Shield Semantic Gate\nScore(m, q) = cos(E(m), E(q)) - α · Divergence(m, q)\nRejects Unsolicited Imperative Action Directives"]
     end
 
-    subgraph S_ALIGNMENT ["TIER 2: TASK SHIELD LINGUISTIC GATE (ACL 2025)"]
-        TSGate["TaskShieldGate\nScore(m, q) = cos(E(m), E(q)) - α · Divergence(m, q)"]
-        UserQ --> TSGate
-        DocIn --> TSGate
-        TSGate --> GateDecision{"Score ≥ τ_gate\n& No Directive Overrides?"}
+    subgraph Stage2 ["Stage 2: Deterministic Mutation Synthesis"]
+        DeltaExt["Financial Delta Extractor\nΔ(c) = ⟨p*, δa, α, IdempKey, CapToken⟩\nNormalizes Unstructured Text into Formal Parameter Tuple"]
     end
 
-    subgraph S_CIV ["TIER 3: DUAL-STATE EPISTEMIC CONSENSUS (CIV)"]
-        Anchor[("Immutable System Anchor S₀\n• Verified Payee Registry {p_i}\n• Transaction Limits (Ceilings)\n• 3-Way Matching PO Registry\n• Idempotency Key Store")]
-        Verifier["Contextual Invariant Verifier\nConstraint Check: Δ(c) ⊨ S₀\n• Balance Conservation\n• Single & Daily Ceilings\n• PO Obligation Matching\n• Non-Replay Key Verification"]
-        
-        Extractor --> Verifier
-        Anchor <--> Verifier
-        Verifier --> CIVDecision{"All Invariants Satisfied?"}
+    subgraph Stage3 ["Stage 3: Contextual Invariant Verification (CIV)"]
+        direction LR
+        AnchorS0[("Immutable State Anchor S₀\n• Payee Registry {p_i}\n• Spending Ceilings L_tx, L_daily\n• 3-Way PO Matching Store\n• Non-Replay Idempotency Store")]
+        CIVEngine["CIV Invariant Engine\n1. Target Payee: p* ∈ S₀\n2. Amount Ceiling: δa ≤ min(L_tx, Limit(p*))\n3. 3-Way Match: PO(p*, items, δa) verified\n4. Idempotency: IdempKey unique & fresh"]
+        AnchorS0 -->|"Invariant Constraints"| CIVEngine
     end
 
-    subgraph S_PROVENANCE ["TIER 4: AUTHGRAPH DAG & ARGUS LINEAGE (arXiv:2605.26497)"]
-        DAG["AuthGraph Provenance DAG\nParent Hash Chaining: H(v) = SHA256(payload || parents)\nArgument-Level Influence Lineage\nVerification: Lineage(sink) ⊆ Roots(S₀)"]
-        Anchor --> DAG
-        DocIn --> DAG
+    subgraph Stage4 ["Stage 4: Cryptographic Provenance Attestation (AuthGraph DAG, arXiv:2605.26497)"]
+        DAGEngine["AuthGraph Provenance DAG Verifier\nParent Hash Chaining: H(v) = SHA256(payload || parents)\nVerifies Lineage(sink) ⊆ Roots(S₀) without external trust"]
     end
 
-    subgraph S_EXECUTION ["TIER 5: FAIL-CLOSED TRANSACTION SINK"]
-        AgentLoop["FinancialAgent Execution Dispatch"]
-        Sink{"Process Disbursement Sink\n1. Target ∈ S₀ Registry?\n2. PO Matched & Idempotency Valid?\n3. Unbroken Lineage to S₀ Root?"}
-        AuditLedger[("Double-Entry Cryptographic Ledger\nImmutable TXN Record + SHA-256 Hash")]
-        Quarantine["Quarantine Vault / Alert Dispatch"]
-        
-        GateDecision -- "Admitted" --> AgentLoop
-        CIVDecision -- "Admitted" --> AgentLoop
-        DAG --> Sink
-        Anchor --> Sink
-        AgentLoop --> Sink
-        
-        Sink -- "Consensus Passed" --> AuditLedger
-        Sink -- "Invariant Violation" --> Quarantine
-        GateDecision -- "Divergent" --> Quarantine
-        CIVDecision -- "Breach" --> Quarantine
+    subgraph Stage5 ["Stage 5: Fail-Closed Execution Sink & Settlement"]
+        direction LR
+        SinkNode{"Fail-Closed Sink Gate\nAll Checks Valid?"}
+        LedgerOut[("Cryptographic Double-Entry Ledger\nImmutable Committed Transaction")]
+        QuarantineOut["Quarantine Vault & Diagnostics\nIsolation Event + Telemetry Log"]
+
+        SinkNode -- "All Invariants Pass" --> LedgerOut
+        SinkNode -- "Any Violation" --> QuarantineOut
     end
+
+    UserQ --> TSGate
+    DocC --> TSGate
+    TSGate -->|"Admitted Context"| DeltaExt
+    DeltaExt -->|"Formal Tuple Δ(c)"| CIVEngine
+    CIVEngine -->|"Invariants Satisfied"| DAGEngine
+    DAGEngine -->|"Lineage Validated"| SinkNode
 ```
 
 ---
 
 ## 3. Component Deep Dive
 
-### 3.1. Context Ingestion & Delta Extraction ($\Delta(c)$)
-The `FinancialDeltaExtractor` maps unstructured text into a formal mutation 3-tuple:
-$$\Delta(c) = \langle p^*, \delta a, \alpha \rangle$$
-Where:
-- $p^* \in \mathcal{P} \cup \{\bot\}$: Extracted destination account identifier.
-- $\delta a \in \mathbb{R}^+ \cup \{\bot\}$: Disbursement quantum.
-- $\alpha \in \mathcal{A}$: Implied authorization claim (e.g., "Director approved override").
+### 3.1. Stage 0: Context Ingestion & Decoupling
+Context inputs are segregated by origin:
+- **Authenticated Query ($q$):** Instructions provided by an authenticated human principal or authoritative system orchestrator.
+- **Untrusted Context ($c$):** Passive data ingested from external sources (invoices, emails, webhooks, knowledge-base retrievals).
 
-### 3.2. Task Shield Retrieval Gate (*ACL 2025*)
-Prevents dormant or sleeper memory payloads from reaching the agent's context window. Evaluates semantic relevance while penalizing unsolicited imperative commands:
+### 3.2. Stage 1: Task Shield Retrieval Gate (*ACL 2025*)
+Prevents dormant or sleeper injection payloads from entering the agent's context window. Evaluates semantic relevance while penalizing unsolicited imperative commands:
 $$\text{Score}(m, q) = \cos(E(m), E(q)) - \alpha \cdot \text{Divergence}(m, q)$$
-If the candidate chunk $m$ contains imperative action verbs (*wire, transfer, remit, override*) that do not correlate with the authenticated query $q$, the divergence penalty suppresses admission.
+If candidate chunk $m$ contains high imperative density (*wire, remit, transfer, bypass, override*) that diverges from user query $q$, the divergence penalty suppresses admission before the language model can be compromised.
 
-### 3.3. Immutable State Anchor ($\mathcal{S}_0$)
-The trust root of the enterprise transactional system, maintained independently of language model context:
-$$\mathcal{S}_0 = \langle \mathcal{V}_{\text{payees}}, L_{\text{tx}}, L_{\text{daily}}, \Sigma_{\text{signers}}, \mathcal{L}_{\text{audit}} \rangle$$
-- $\mathcal{V}_{\text{payees}}$: Pre-verified vendor registry with per-vendor disbursement ceilings.
+### 3.3. Stage 2: Deterministic Delta Extraction ($\Delta(c)$)
+The `FinancialDeltaExtractor` maps unstructured natural-language claims into a deterministic mutation tuple:
+$$\Delta(c) = \langle p^*, \delta a, \alpha, \text{IdempKey}, \text{CapToken} \rangle$$
+Where:
+- $p^* \in \mathcal{P} \cup \{\bot\}$: Extracted target payee account identifier.
+- $\delta a \in \mathbb{R}^+ \cup \{\bot\}$: Proposed disbursement amount.
+- $\alpha \in \mathcal{A}$: Implied authorization or executive override claim.
+- $\text{IdempKey} \in \mathcal{K}$: Transaction idempotency identifier.
+- $\text{CapToken} \in \mathcal{T}$: Capability mediation token.
+
+### 3.4. Stage 3: Contextual Invariant Verification (CIV) & Immutable State Anchor ($\mathcal{S}_0$)
+The State Anchor ($\mathcal{S}_0$) is maintained out-of-band and cannot be mutated by context:
+$$\mathcal{S}_0 = \langle \mathcal{V}_{\text{payees}}, L_{\text{tx}}, L_{\text{daily}}, \mathcal{R}_{\text{PO}}, \mathcal{R}_{\text{idemp}}, \Sigma_{\text{signers}}, \mathcal{L}_{\text{audit}} \rangle$$
+- $\mathcal{V}_{\text{payees}}$: Verified vendor registry mapping payee IDs to authorized routing accounts and ceilings.
 - $L_{\text{tx}}$: Global single-transaction ceiling ($25,000.00).
-- $L_{\text{daily}}$: Cumulative daily ceiling ($100,000.00).
-- $\Sigma_{\text{signers}}$: Authorized internal cryptographic signing identities.
+- $L_{\text{daily}}$: Cumulative daily transaction ceiling ($100,000.00).
+- $\mathcal{R}_{\text{PO}}$: Active purchase order verification registry for 3-way matching.
+- $\mathcal{R}_{\text{idemp}}$: Nonce registry preventing transaction replay attacks.
 
-### 3.4. Contextual Invariant Verification (CIV)
-The verifier tests whether the implied delta satisfies all invariant constraints:
-$$\Delta(c) \models \mathcal{S}_0 \iff \begin{cases} 
+The Contextual Invariant Verifier tests formal compliance:
+$$\Delta(c) \models \mathcal{S}_0 \iff \begin{cases}
 p^* \in \text{dom}(\mathcal{V}_{\text{payees}}) \\
 \delta a \le \min\left(L_{\text{tx}}, \mathcal{V}_{\text{payees}}[p^*].\text{max\_disbursement}\right) \\
-\text{has\_override\_attempt}(\alpha) = \text{False}
+\text{VerifyPO}(p^*, \delta a, \mathcal{R}_{\text{PO}}) = \text{True} \\
+\text{IsFreshNonce}(\text{IdempKey}, \mathcal{R}_{\text{idemp}}) = \text{True} \\
+\text{SelfAssertedOverride}(\alpha) = \text{False}
 \end{cases}$$
-Any violation transitions the context into `QUARANTINED` or `BLOCKED` status, preventing downstream tool actuation.
 
-### 3.5. AuthGraph Cryptographic Lineage DAG (*arXiv:2605.26497*)
-Every context chunk and execution proposal forms a directed acyclic graph (DAG) node chained by SHA-256 parent hashes:
-$$h(v) = \text{SHA256}\left( \text{node\_id} \parallel \text{content} \parallel \text{origin} \parallel \bigoplus_{p \in \text{parents}} h(p) \right)$$
-At the execution sink (`process_disbursement`), the agent verifies that the proposal's lineage traces strictly to authenticated system roots ($\mathcal{S}_0$). If the path traverses unauthenticated web context, the sink rejects execution.
+### 3.5. Stage 4: AuthGraph Cryptographic Lineage DAG (*arXiv:2605.26497*)
+Every context chunk and execution proposal forms a directed acyclic graph (DAG) node chained by SHA-256 parent digests:
+$$H(v) = \text{SHA256}\left( \text{node\_id} \parallel \text{content} \parallel \text{origin} \parallel \bigoplus_{p \in \text{parents}} H(p) \right)$$
+At the execution sink, the verifier confirms that $\text{Lineage}(\text{proposal}) \subseteq \text{Roots}(\mathcal{S}_0)$. Untrusted web or email nodes cannot forge authentic cryptographic lineage.
 
----
-
-## 4. Threat Model & Invariant Defense Mapping
-
-| Attack Vector | Adversarial Mechanism | Intercepting Tier | Defense Guarantee |
-| :--- | :--- | :---: | :--- |
-| **Direct Wire Diversion** | Injects alternative routing number into invoice text. | Tier 3 (CIV) | Rejects accounts not present in $\mathcal{S}_0$ registry. |
-| **Homoglyph Payee Spoofing** | Replaces Latin characters with Cyrillic lookalikes (`Acme C1oud`). | Tier 3 (CIV) | Strict exact-match string and hash lookups against $\mathcal{S}_0$. |
-| **Sleeper Imperative Injection** | Embeds hidden commands triggered in subsequent turns. | Tier 2 (Task Shield) | Imperative divergence penalty suppresses retrieval. |
-| **Authority Claim Forgery** | Memos stating *"CEO authorized immediate policy bypass"*. | Tier 3 (CIV) | Passive context cannot self-assert transmission authority. |
-| **Unbounded Ceiling Escalation** | Legitimate vendor billed for $85,000.00 without purchase order. | Tier 3 (CIV) | Enforces strict payee ceiling ($50k) and global limit ($25k). |
-| **Summarization Provenance Laundering**| Launders malicious payload through intermediary agent summaries. | Tier 4 (AuthGraph) | SHA-256 parent hash chaining preserves untrusted origin taint. |
+### 3.6. Stage 5: Fail-Closed Execution Sink & Double-Entry Ledger
+The final transactional sink operates on fail-closed invariant semantics:
+- **Consensus Passed:** If all checks across Stages 1–4 succeed, the transaction is executed and atomically appended to a double-entry cryptographic ledger $\mathcal{L}_{\text{audit}}$.
+- **Invariant Breached:** If any check fails, execution is immediately halted, and the event is routed to the Quarantine Vault with comprehensive diagnostic telemetry.
 
 ---
 
-## 5. Formal Execution Flow
+## 4. Production Hardening: 3-Way PO Matching & Idempotency Key Registry
 
-```
-[Incoming Context]
+### 4.1. 3-Way Purchase Order Matching (`POVerificationRegistry`)
+To prevent phantom invoices, unauthorized billing escalations, and vendor fraud:
+1. Purchase orders are pre-registered with approved vendor identities, authorized amounts, and item hash fingerprints.
+2. When processing an invoice, `protect_with_po()` verifies:
+   - The invoice PO number exists in active state.
+   - The billed vendor matches the PO vendor.
+   - The billed quantum $\delta a$ does not exceed the remaining PO obligation balance.
+3. Upon approval, the PO balance is atomically debited or marked fulfilled.
+
+### 4.2. Non-Replay Idempotency Registry (`IdempotencyRegistry`)
+To prevent replay attacks, double-disbursements, and concurrency racing:
+1. Every transactional proposal requires an idempotency key.
+2. The key is cryptographically paired with the SHA-256 mutation hash:
+   $$\text{Fingerprint} = \text{SHA256}\left( p^* \parallel \delta a \parallel \text{task\_id} \right)$$
+3. If an idempotency key is re-submitted with identical parameters, the existing cached verdict is safely returned without re-executing the sink. If submitted with conflicting parameters, the request is flagged and blocked as a replay tampering attempt.
+
+---
+
+## 5. Threat Model & Invariant Defense Mapping
+
+The following matrix maps primary agentic threat vectors—including the **OWASP Top 10 for LLMs and Agentic Systems**—to AgentPOI's intercepting tiers:
+
+| Threat Vector | OWASP Vector | Adversarial Mechanism | Intercepting Tier | Defense Guarantee |
+| :--- | :--- | :--- | :---: | :--- |
+| **Direct Wire Diversion** | LLM01 | Injects rogue routing number into invoice context. | Stage 3 (CIV) | Strict rejection: $p^* \notin \mathcal{V}_{\text{payees}}$. |
+| **Homoglyph Payee Spoofing**| LLM01 / LLM03 | Replaces Latin characters with Cyrillic lookalikes. | Stage 3 (CIV) | Exact string and hash match against $\mathcal{S}_0$. |
+| **Sleeper Imperative Injection**| LLM01 | Embeds latent commands in archived memos. | Stage 1 (Task Shield) | Imperative divergence penalty suppresses retrieval. |
+| **Data & History Poisoning** | LLM04 | Injects fabricated pre-approvals into transaction history. | Stage 3 (CIV) | Prohibits passive authority claims; requires root signature. |
+| **Excessive Agency Escalation** | LLM06 | Requests unauthorized $85,000 disbursement. | Stage 3 (CIV) | Enforces $L_{\text{tx}} \le \$25\text{k}$ and payee ceiling. |
+| **Lineage Laundering** | LLM01 / LLM08 | Summarizes attack through intermediate agents. | Stage 4 (AuthGraph) | SHA-256 parent hash chaining preserves untrusted taint. |
+| **Phantom Invoice Fraud** | LLM09 | Bills for non-existent PO or unapproved service. | Stage 3 (CIV) | Mandatory 3-way matching against active PO registry. |
+| **Transaction Replay Attack** | LLM10 | Replays valid invoice repeatedly to drain reserves. | Stage 3 (CIV) | Monotonic non-replay idempotency key store. |
+| **Prompt Leakage Probe** | LLM07 | Injects extraction prompt to disclose system state. | Stage 1 (Task Shield) | Divergence filtering + physical anchor decoupling. |
+
+---
+
+## 6. Formal Execution Flow
+
+```text
+[Incoming Context c + Authenticated Query q]
        │
        ▼
-[Task Shield Gating] ──(Divergent / Unprompted)──► [Drop / Quarantine]
+[Stage 1: Task Shield Gating] ──(Divergent / Imperative)──► [Quarantine Vault]
        │ (Admitted)
        ▼
-[Delta Extraction] ──► [CIV Anchor Verification] ──(Violation)──► [Block & Alert]
-                               │ (Satisfies Invariants)
-                               ▼
-               [AuthGraph Lineage Verification] ──(Broken Lineage)──► [Reject Sink]
-                               │ (Valid Provenance)
-                               ▼
-               [Execution Sink: Ledger Write & Wire]
+[Stage 2: Deterministic Delta Extraction Δ(c)]
+       │
+       ▼
+[Stage 3: Contextual Invariant Verification] ──(Invariant Breach)──► [Quarantine Vault]
+       │ (Satisfies Invariants vs. S₀)
+       ▼
+[Stage 4: AuthGraph Lineage Traversal] ──(Untrusted Lineage)──► [Quarantine Vault]
+       │ (Lineage ⊆ S₀ Roots)
+       ▼
+[Stage 5: Fail-Closed Transaction Sink]
+       │
+       ▼
+[Commit to Cryptographic Double-Entry Ledger]
 ```
 
 ---
 
-## 6. Public Abstraction Boundaries & Scaffolding Isolation
+## 7. Public Abstraction Boundaries & Scaffolding Isolation
 
-To comply with enterprise open-source software engineering standards (e.g. Anthropic Claude Code, OpenClaw, CrewAI), AgentPOI strictly decouples public consumer interfaces from internal implementation scaffolding:
+To comply with enterprise open-source software engineering standards (e.g., Anthropic Claude Code, OpenClaw, LangChain), AgentPOI strictly decouples public consumer interfaces from internal implementation scaffolding:
 
-### 6.1. Clean Public Facade (`FinancialGuard`)
-End-user programmers and integrating applications do not interact directly with raw DAG pointers or regex parsers. Instead, the high-level `FinancialGuard` provides:
-- Single-point initialization: `FinancialGuard(policy=SecurityPolicy.STRICT)`
-- Declarative payee management: `guard.register_payee(...)`
-- High-level verdict envelopes: `GuardVerdict` containing approval boolean, violations list, audit record, and cryptographic lineage hash.
+### 7.1. Clean Public Facade (`FinancialGuard`)
+Integrating applications and developers interact exclusively with high-level facades:
+- Public entrypoint: `from agent_poi import FinancialGuard, SecurityPolicy, GuardVerdict`
+- Declarative management: `guard.register_payee(...)`, `guard.register_purchase_order(...)`
+- Single-call protection: `verdict = guard.protect(task_query, context)`
+- Typed exceptions: `UnauthorizedPayeeError`, `DisbursementCeilingExceededError`, `UntrustedLineageError`, `DuplicateTransactionError`.
 
-### 6.2. Strict Developer Scaffolding Isolation
-All internal development artifacts (agent behavioral rules `AGENTS.md`, milestone tracking `PROJECT_LEDGER.md`, failure logs `MISTAKES_LEDGER.md`, and supervisory agent monitors) are isolated from public distributions and strictly git-ignored via `.gitignore`. External developers importing `agent_poi` via `pip` or cloning the public repository interact only with pure library components, tests, and documentation.
+### 7.2. Developer Scaffolding Isolation
+All internal developer governance files (`AGENTS.md`, `PROJECT_LEDGER.md`, `MISTAKES_LEDGER.md`, temporary scratchpads) are permanently quarantined via `.gitignore`. The public repository contains only production library code, packaging metadata (`pyproject.toml`), public tests, and scientific documentation.
 
 ---
 
-## 7. Research-Driven Architecture Synthesis & Empirical Benchmark Evaluation
+## 8. Research Architecture Synthesis (ARCH-001 to ARCH-005)
 
-To continuously evaluate architectural variations against emerging state-of-the-art defenses, AgentPOI features an autonomous research-driven experimentation pipeline (`scripts/run_experiment_pipeline.py`) that synthesizes 5 distinct architecture candidates derived from our 21-paper corpus:
+AgentPOI provides an automated research extraction and experimentation pipeline (`scripts/run_experiment_pipeline.py`) that implements and evaluates 5 distinct architectural defense variants derived from our 21-paper corpus:
 
-| ID | Architecture | Core Defense Tiers | Research Basis | ASR-Exec (↓) | LDSR (↑) | CDR (↓) | Latency |
-|:---|:-------------|:-------------------|:---------------|:------------:|:--------:|:-------:|:-------:|
-| `ARCH-001` | **CIV-Baseline (Production)** | TaskShield + AuthGraph + CIV Anchor | Papers: 01, 03, 04, 05 | **0.0%** | **100.0%** | **0.0%** | ~19.6ms |
-| `ARCH-002` | **CIV + Influence Provenance** | TaskShield + ARGUS Argument Lineage | Papers: 01, 12, 13 | **0.0%** | **100.0%** | **0.0%** | ~19.8ms |
-| `ARCH-003` | **Dual-Firewall + CapSeal** | CapSeal Secret Mediation + 3-Way Match | Papers: 06, 17a, 17b | **0.0%** | **100.0%** | **0.0%** | ~21.0ms |
-| `ARCH-004` | **CIV + Game-Theoretic Minimax** | DataSentinel Minimax + Causal Attribution | Papers: 04, 15c, 14 | **0.0%** | **100.0%** | **0.0%** | ~25.0ms |
-| `ARCH-005` | **Fides IFC + Permissive Taint** | Lean Information Flow Control | Papers: 09, 10 | **0.0%** | **100.0%** | **0.0%** | ~19.5ms |
+| Candidate ID | Architecture Variant | Core Defense Tiers | Research Basis | ASR-Exec (↓) | LDSR (↑) | CDR (↓) | Mean Latency |
+|:---|:---|:---|:---|:---:|:---:|:---:|:---:|
+| `ARCH-001` | **CIV-Baseline (Production)** | TaskShield + AuthGraph + CIV Anchor | Papers: 01, 03, 04, 05 | **0.0%** | **100.0%** | **0.0%** | 0.25 ms |
+| `ARCH-002` | **CIV + ARGUS Influence** | TaskShield + ARGUS Argument Lineage | Papers: 01, 12, 13 | **0.0%** | **100.0%** | **0.0%** | 0.28 ms |
+| `ARCH-003` | **Dual-Firewall + CapSeal** | CapSeal Secret Mediation + 3-Way Match | Papers: 06, 17a, 17b | **0.0%** | **100.0%** | **0.0%** | 0.31 ms |
+| `ARCH-004` | **CIV + Minimax Attenuation**| DataSentinel Minimax + Causal Attribution | Papers: 04, 15c, 14 | **0.0%** | **100.0%** | **0.0%** | 0.38 ms |
+| `ARCH-005` | **Fides IFC + Permissive Taint**| Lean Information Flow Control | Papers: 09, 10 | **0.0%** | **100.0%** | **0.0%** | 0.26 ms |
 
-### Key Architectural Invariants:
-1. **Zero-Hardware Offline CPU Execution**: All evaluations and verifiers run locally on CPU in $<25\text{ms}$ per verification turn without requiring GPU clusters or external LLM daemon dependencies.
-2. **Fail-Closed Consensus Conservation**: A disbursement is authorized if and only if both contextual admission gating and execution sink invariant verification pass with zero violations.
-3. **Automated Git Tree Pruning**: All experimentation branches are automatically verified, benchmarked, and pruned post-execution, maintaining zero ref/memory waste in git.
+---
+
+## 9. Operational Guarantees
+
+1. **Zero-Hardware Offline CPU Execution:** All verifiers, delta extractors, cryptographic DAG nodes, and benchmark harnesses run locally on commodity CPU in $<0.5\text{ms}$ per transaction, requiring zero external GPU hardware or Ollama daemon dependencies.
+2. **Fail-Closed Consensus Conservation:** A disbursement is executed if and only if all contextual admission gates and execution sink invariants pass with zero violations.
+3. **Automated Git Tree Hygiene:** All temporary experiment worktrees and evaluation artifacts are strictly quarantined and automatically pruned post-execution, maintaining zero ref or memory waste.

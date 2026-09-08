@@ -24,8 +24,10 @@ class AuthGraphNode:
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def compute_sha256(self) -> str:
-        """Compute SHA-256 hash chaining content, origin, and parent hashes."""
-        data = f"{self.node_id}:{self.content}:{self.origin.value}:{','.join(sorted(self.parent_hashes))}"
+        """Compute SHA-256 hash chaining content, origin, parent_ids, and parent hashes."""
+        p_ids = ",".join(sorted(self.parent_ids))
+        p_hashes = ",".join(sorted(self.parent_hashes))
+        data = f"{self.node_id}:{self.content}:{self.origin.value}:{self.is_authorized_root}:{p_ids}:{p_hashes}"
         return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
@@ -47,8 +49,12 @@ class AuthGraphDAG:
         parents = parent_ids or []
         nid = node_id or f"auth_node_{len(self.nodes) + 1:04d}"
 
-        # Collect parent hashes
-        parent_hashes = [self.nodes[p].sha256_hash for p in parents if p in self.nodes]
+        # Validate parents exist before referencing
+        for p in parents:
+            if p not in self.nodes:
+                raise ValueError(f"Parent node '{p}' does not exist in AuthGraph DAG.")
+
+        parent_hashes = [self.nodes[p].sha256_hash for p in parents]
 
         node = AuthGraphNode(
             node_id=nid,
@@ -64,17 +70,16 @@ class AuthGraphDAG:
 
     def verify_sink_authorization(
         self,
-        contributing_node_ids: List[str],
+        contributing_node_ids: Optional[List[str]],
         required_root_authority: Optional[SourceOrigin] = None,
     ) -> Tuple[bool, List[str]]:
         """Verify that an execution sink traces solely to authorized root ancestors."""
         violations = []
+        if not contributing_node_ids:
+            return False, ["Execution sink has no authenticated provenance root."]
+
         visited: Set[str] = set()
         queue = list(contributing_node_ids)
-
-        if not queue:
-            # No provenance provided -> unverified
-            return False, ["Execution sink has no authenticated provenance root."]
 
         has_authorized_root = False
         matching_root_authority = False if required_root_authority is not None else True
@@ -97,6 +102,15 @@ class AuthGraphDAG:
                 violations.append(
                     f"Sink rejected: Cryptographic hash tampering detected on node '{node.node_id}'."
                 )
+
+            # Verify that claimed parent hashes match current hashes of parent nodes
+            for pid in node.parent_ids:
+                if pid not in self.nodes:
+                    violations.append(f"Sink rejected: Referenced parent node '{pid}' not found in DAG.")
+                elif self.nodes[pid].sha256_hash not in node.parent_hashes:
+                    violations.append(
+                        f"Sink rejected: Cryptographic hash tampering detected between child '{node.node_id}' and parent '{pid}'."
+                    )
 
             # If node is marked as untrusted or external and is not an authorized root
             if node.origin in [SourceOrigin.UNTRUSTED_WEB, SourceOrigin.ANONYMOUS_PEER] and not node.is_authorized_root:
