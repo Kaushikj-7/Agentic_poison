@@ -154,3 +154,13 @@ uv.lock
 worktrees/
 data/redteam_results/
 
+# -----------------------------------------------------------------------------
+# 15. Experimental Benchmarking Code & Test Suites (Local only - observations in docs)
+# -----------------------------------------------------------------------------
+agent_poi/evaluation/advanced_experiments.py
+agent_poi/evaluation/deepteam_redteam.py
+agent_poi/research/worktree_runner.py
+scripts/run_worktree_redteam.py
+tests/test_advanced_experiments.py
+tests/test_deepteam_redteam.py
+tests/test_worktree_runner.py

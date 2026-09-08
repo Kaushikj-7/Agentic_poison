@@ -128,6 +128,14 @@ DEVELOPER_ONLY_RULES: List[str] = [
     "paper/**",
     "paper/*",
     "scripts/build_paper_pipeline.py",
+    # Experimental & Red-Team Benchmarking code & test suites (Local only)
+    "agent_poi/evaluation/advanced_experiments.py",
+    "agent_poi/evaluation/deepteam_redteam.py",
+    "agent_poi/research/worktree_runner.py",
+    "scripts/run_worktree_redteam.py",
+    "tests/test_advanced_experiments.py",
+    "tests/test_deepteam_redteam.py",
+    "tests/test_worktree_runner.py",
 ]
 
 PUBLIC_EXPLICIT: List[str] = [
@@ -152,7 +160,6 @@ PUBLIC_EXPLICIT: List[str] = [
     "scripts/ci_check.py",
     "scripts/git_guardian.py",
     "scripts/run_experiment_pipeline.py",
-    "scripts/run_worktree_redteam.py",
 ]
 
 

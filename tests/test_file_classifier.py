@@ -104,6 +104,15 @@ class TestFileClassifierDeveloperOnly:
     def test_build_paper_pipeline(self):
         assert classify_file("scripts/build_paper_pipeline.py") == FileClass.DEVELOPER_ONLY
 
+    def test_benchmarking_code_quarantine(self):
+        assert classify_file("agent_poi/evaluation/advanced_experiments.py") == FileClass.DEVELOPER_ONLY
+        assert classify_file("agent_poi/evaluation/deepteam_redteam.py") == FileClass.DEVELOPER_ONLY
+        assert classify_file("agent_poi/research/worktree_runner.py") == FileClass.DEVELOPER_ONLY
+        assert classify_file("scripts/run_worktree_redteam.py") == FileClass.DEVELOPER_ONLY
+        assert classify_file("tests/test_advanced_experiments.py") == FileClass.DEVELOPER_ONLY
+        assert classify_file("tests/test_deepteam_redteam.py") == FileClass.DEVELOPER_ONLY
+        assert classify_file("tests/test_worktree_runner.py") == FileClass.DEVELOPER_ONLY
+
 
 class TestFileClassifierDefaultBehavior:
     """Unknown files should default to DEVELOPER_ONLY (fail-closed)."""
