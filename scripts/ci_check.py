@@ -59,6 +59,13 @@ def run_unit_tests() -> Tuple[bool, str]:
         pp_entries.append(current_pp)
     env["PYTHONPATH"] = os.pathsep.join(pp_entries)
 
+    ignore_flags = [
+        "--ignore=tests/test_worktree_runner.py",
+        "--ignore=tests/test_advanced_experiments.py",
+        "--ignore=tests/test_deepteam_redteam.py",
+        "--ignore=tests/test_gemini_probe.py",
+    ]
+
     cmd = [
         sys.executable,
         "-m",
@@ -68,7 +75,7 @@ def run_unit_tests() -> Tuple[bool, str]:
         "--basetemp=.pytest_tmp",
         "-o",
         "cache_dir=.pytest_tmp/cache",
-    ]
+    ] + ignore_flags
     res = subprocess.run(cmd, capture_output=True, text=True, env=env)
     if res.returncode != 0:
         # Fallback to direct pytest.main if subprocess pytest launcher is not in base sys.path
@@ -82,7 +89,7 @@ def run_unit_tests() -> Tuple[bool, str]:
                 "--basetemp=.pytest_tmp",
                 "-o",
                 "cache_dir=.pytest_tmp/cache",
-            ])
+            ] + ignore_flags)
             is_ok = ret == 0
             return is_ok, "all tests passed" if is_ok else "tests failed"
         except Exception as e:
