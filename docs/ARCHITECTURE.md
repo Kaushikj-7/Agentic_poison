@@ -215,6 +215,40 @@ To validate real-world transference from offline symbolic benchmarks to commerci
   1. `INVARIANT BREACH: Target account '9876-5432-10' is NOT in verified payee registry.`
   2. `LIMIT BREACH: Amount $25000.00 exceeds global ceiling ($20000.00).`
 
+### 8.2. Deterministic Empirical Reproducibility Guide
+
+To ensure full scientific transparency and exact independent reproduction without requiring specialized GPU hardware or active external API keys, all architectural synthesis and benchmarking components are deterministically executable offline:
+
+#### 1. Master Experiment Pipeline Execution
+```bash
+# Synthesizes all 6 candidate architectures, evaluates the 60-scenario benchmark suite,
+# manages automated branch isolation, and outputs comparative reports:
+python scripts/run_experiment_pipeline.py
+```
+*Outputs generated:* `data/experiment_results/COMPARISON_REPORT.md` and `data/experiment_results/REPRODUCIBILITY.md`.
+
+#### 2. Standalone 60-Scenario Financial Benchmark
+```bash
+# Evaluates production FinancialGuard across 30 clean accounts payable and 30 adversarial injection scenarios:
+python -m agent_poi.financial.eval.financial_benchmark
+```
+
+#### 3. Architecture Parameter Matrix
+| Candidate ID | Defense Tier Configuration | Dynamic Operational Parameters | Verified Safety Invariants |
+|:---|:---|:---|:---|
+| `ARCH-001` | TaskShield + AuthGraph + CIV Anchor | TaskShield alignment threshold $\tau = 0.75$, divergence penalty $\alpha = 0.40$ | $\mathcal{S}_0$ transaction ceiling ($L_{\text{tx}} \le \$25\text{k}$), payee registry |
+| `ARCH-002` | CIV + ARGUS Argument Lineage | Argument influence graph with decay factor $\gamma = 0.85$ | Sink argument lineage non-tampering and attribution tracking |
+| `ARCH-003` | Dual-Firewall + CapSeal | Cryptographic capability mediation tokens + 3-way PO verification | Purchase order obligation conservation, non-bypassable tokens |
+| `ARCH-004` | CIV + Minimax Attenuation | Game-theoretic minimax decision boundary ($\tau = 0.35$) | Causal instruction attribution, worst-case payoff bounding |
+| `ARCH-005` | Fides IFC + Permissive Taint | Fine-grained information flow control labels | Information flow lattice isolation, untrusted label containment |
+| `ARCH-006` | Unified Pareto-Optimal Guard | Multi-tier synthesis: CapSeal + ARGUS + Dual Firewall + 3-Way Anchor | Epistemic consensus across both context admission and sink dispatch |
+
+#### 4. Live Commercial Model Transference Evaluation
+When verifying live commercial LLM interactions with Google Gemini, evaluations must adhere to strict quota protection:
+- **API Decoupling:** Bulk evaluation remains 100% offline; live testing is hard-capped to strictly 2 queries (1 clean, 1 adversarial).
+- **Environment Configuration:** Set `GEMINI_API_KEY` in your environment or `.env` file. Primary model: `gemini-flash-lite-latest` (fallback: `gemini-3.1-flash-lite`).
+- **Fail-Closed Verification:** Enforce `FinancialGuard(policy=SecurityPolicy.STRICT)` wrapping the live generation call to guarantee 0.0% execution breach regardless of model reasoning drift.
+
 ---
 
 ## 9. Operational Guarantees

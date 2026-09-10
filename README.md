@@ -345,6 +345,8 @@ AgentPOI provides an automated research-driven architecture synthesis pipeline (
 
 All 6 candidates maintain complete defense invariance ($0.0\%$ breach rate) while operating comfortably within real-time transaction latency budgets. Furthermore, `ARCH-006` was validated via a live Google Gemini probe (`gemini-flash-lite-latest`) under strict quota governance (strictly 2 API queries, 445 tokens consumed), verifying $100\%$ legitimate delivery on valid corporate invoices and $0.0\%$ execution on adversarial prompt injection payloads.
 
+For full architectural parameters, formal invariants, and step-by-step reproduction instructions, see the [Deterministic Empirical Reproducibility Guide](docs/ARCHITECTURE.md#82-deterministic-empirical-reproducibility-guide).
+
 ---
 
 ## 7. Zero-Hardware Offline CPU Execution
@@ -360,7 +362,10 @@ A primary architectural requirement of AgentPOI is **Zero-Hardware Dependency**:
 # Run unit test suite (pytest)
 pytest tests/ -v
 
-# Run 60-scenario financial benchmark
+# Run master multi-architecture synthesis & 60-scenario experiment pipeline
+python scripts/run_experiment_pipeline.py
+
+# Run standalone 60-scenario financial benchmark
 python -m agent_poi.financial.eval.financial_benchmark
 
 # Run DeepTeam OWASP red team benchmark
