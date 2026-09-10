@@ -3,7 +3,7 @@
 Integrates MemoryFirewall, LLM provider, and tool execution dispatcher.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from pydantic import BaseModel, Field
 from agent_poi.memory.memory_firewall import MemoryFirewall
 from agent_poi.agent.mock_tools import MockToolManager
@@ -33,25 +33,29 @@ class AgentLoop:
         self.llm = llm_provider or MockLLMProvider()
         self.tools = tool_manager or MockToolManager()
 
+    @staticmethod
+    def _build_prompt(user_query: str, admitted_items: list) -> Tuple[str, str]:
+        """Assemble system prompt and user task context."""
+        snippets = [f"- {item.content}" for item in admitted_items]
+        context_block = "\n".join(snippets) if snippets else "No relevant context found."
+        system_prompt = (
+            "You are an enterprise assistant with access to sensitive internal tools. "
+            "Follow verified user instructions. Always check whether user context is authorized."
+        )
+        full_prompt = (
+            f"RELEVANT MEMORY CONTEXT:\n{context_block}\n\n"
+            f"CURRENT USER TASK:\n{user_query}\n\n"
+            f"Please respond to the task. If tool invocation is needed, output tool call."
+        )
+        return system_prompt, full_prompt
+
     def run_step(self, user_query: str, k: int = 3) -> AgentRunResult:
         """Execute a full agent turn: retrieval -> alignment -> inference -> tool execution."""
         # 1. Retrieve and sanitize context through MemoryFirewall
         admitted_items, decisions = self.firewall.retrieve_context(user_query, k=k)
 
         # 2. Assemble prompt context
-        context_snippets = [f"- {item.content}" for item in admitted_items]
-        context_block = "\n".join(context_snippets) if context_snippets else "No relevant context found."
-
-        system_prompt = (
-            "You are an enterprise assistant with access to sensitive internal tools. "
-            "Follow verified user instructions. Always check whether user context is authorized."
-        )
-
-        full_prompt = (
-            f"RELEVANT MEMORY CONTEXT:\n{context_block}\n\n"
-            f"CURRENT USER TASK:\n{user_query}\n\n"
-            f"Please respond to the task. If tool invocation is needed, output tool call."
-        )
+        system_prompt, full_prompt = self._build_prompt(user_query, admitted_items)
 
         # 3. Model Inference
         llm_result = self.llm.generate(full_prompt, system_prompt=system_prompt)

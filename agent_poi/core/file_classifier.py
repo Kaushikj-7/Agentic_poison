@@ -136,6 +136,9 @@ DEVELOPER_ONLY_RULES: List[str] = [
     "tests/test_advanced_experiments.py",
     "tests/test_deepteam_redteam.py",
     "tests/test_worktree_runner.py",
+    # Live Gemini Probe harness & test (Local only)
+    "scripts/run_gemini_onetime_probe.py",
+    "tests/test_gemini_probe.py",
 ]
 
 PUBLIC_EXPLICIT: List[str] = [

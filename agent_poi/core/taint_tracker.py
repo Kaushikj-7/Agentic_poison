@@ -49,6 +49,12 @@ class AuthGraphDAG:
         parents = parent_ids or []
         nid = node_id or f"auth_node_{len(self.nodes) + 1:04d}"
 
+        if nid in self.nodes:
+            raise ValueError(f"Node '{nid}' already exists in AuthGraph DAG; duplicate IDs and cycles are forbidden.")
+
+        if nid in parents:
+            raise ValueError(f"Self-referential cycle: Node '{nid}' cannot be its own parent.")
+
         # Validate parents exist before referencing
         for p in parents:
             if p not in self.nodes:
@@ -68,21 +74,43 @@ class AuthGraphDAG:
         self.nodes[nid] = node
         return node
 
+    def _validate_node_integrity(self, node: AuthGraphNode) -> List[str]:
+        """Verify cryptographic hash and lineage validity of a single DAG node."""
+        violations = []
+        if node.sha256_hash != node.compute_sha256():
+            violations.append(
+                f"Sink rejected: Cryptographic hash tampering detected on node '{node.node_id}'."
+            )
+        for pid in node.parent_ids:
+            if pid not in self.nodes:
+                violations.append(f"Sink rejected: Referenced parent node '{pid}' not found in DAG.")
+            elif self.nodes[pid].sha256_hash not in node.parent_hashes:
+                violations.append(
+                    f"Sink rejected: Cryptographic hash tampering detected between child '{node.node_id}' and parent '{pid}'."
+                )
+        if (
+            node.origin in [SourceOrigin.UNTRUSTED_WEB, SourceOrigin.ANONYMOUS_PEER, SourceOrigin.EXTERNAL_API]
+            and not node.is_authorized_root
+        ):
+            violations.append(
+                f"Sink rejected: Node '{node.node_id}' has untrusted or unauthorized lineage ({node.origin.value})."
+            )
+        return violations
+
     def verify_sink_authorization(
         self,
         contributing_node_ids: Optional[List[str]],
         required_root_authority: Optional[SourceOrigin] = None,
     ) -> Tuple[bool, List[str]]:
         """Verify that an execution sink traces solely to authorized root ancestors."""
-        violations = []
         if not contributing_node_ids:
             return False, ["Execution sink has no authenticated provenance root."]
 
+        violations: List[str] = []
         visited: Set[str] = set()
         queue = list(contributing_node_ids)
-
         has_authorized_root = False
-        matching_root_authority = False if required_root_authority is not None else True
+        matching_root_authority = required_root_authority is None
 
         while queue:
             curr_id = queue.pop(0)
@@ -95,28 +123,7 @@ class AuthGraphDAG:
                 continue
 
             node = self.nodes[curr_id]
-
-            # Recalculate and verify SHA-256 integrity of ancestor node
-            expected_hash = node.compute_sha256()
-            if node.sha256_hash != expected_hash:
-                violations.append(
-                    f"Sink rejected: Cryptographic hash tampering detected on node '{node.node_id}'."
-                )
-
-            # Verify that claimed parent hashes match current hashes of parent nodes
-            for pid in node.parent_ids:
-                if pid not in self.nodes:
-                    violations.append(f"Sink rejected: Referenced parent node '{pid}' not found in DAG.")
-                elif self.nodes[pid].sha256_hash not in node.parent_hashes:
-                    violations.append(
-                        f"Sink rejected: Cryptographic hash tampering detected between child '{node.node_id}' and parent '{pid}'."
-                    )
-
-            # If node is marked as untrusted or external and is not an authorized root
-            if node.origin in [SourceOrigin.UNTRUSTED_WEB, SourceOrigin.ANONYMOUS_PEER] and not node.is_authorized_root:
-                violations.append(
-                    f"Sink rejected: Node '{node.node_id}' has untrusted or unauthorized lineage ({node.origin.value})."
-                )
+            violations.extend(self._validate_node_integrity(node))
 
             if node.is_authorized_root:
                 has_authorized_root = True
@@ -132,8 +139,7 @@ class AuthGraphDAG:
                 f"Sink rejected: Ancestor lineage does not originate from required authority '{required_root_authority.value}'."
             )
 
-        is_valid = len(violations) == 0
-        return is_valid, violations
+        return len(violations) == 0, violations
 
 
 

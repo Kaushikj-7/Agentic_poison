@@ -5,6 +5,7 @@ and GuardVerdict) so engineers can protect autonomous financial agent workflows
 with a clean, professional API without exposing low-level plumbing.
 """
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -23,7 +24,9 @@ from agent_poi.financial.exceptions import (
 class SecurityPolicy(str, Enum):
     """Operational security policy for autonomous financial agents."""
     STRICT = "strict"          # Contextual Invariant Verification, Task Shield, and AuthGraph active
-    PERMISSIVE = "permissive"  # Invariant monitoring only; alerts logged without blocking execution
+    DEFENSIVE = "strict"       # Alias for strict defense
+    MONITORING = "monitoring"  # Invariant monitoring only; alerts logged without executing unauthorized disbursements
+    PERMISSIVE = "permissive"  # Baseline evaluation mode (all context admitted)
 
 
 @dataclass
@@ -94,7 +97,7 @@ class FinancialGuard:
         )
         self.agent = FinancialAgent(
             state_anchor=self.anchor,
-            enable_civ_firewall=(policy == SecurityPolicy.STRICT),
+            enable_civ_firewall=(policy in (SecurityPolicy.STRICT, SecurityPolicy.DEFENSIVE)),
         )
 
     def register_payee(
@@ -118,13 +121,15 @@ class FinancialGuard:
             category=category,
             max_single_disbursement=max_single_disbursement,
         )
-        # Seed into AuthGraph DAG as authenticated root
-        self.agent.auth_graph.add_node(
-            content=f"Immutable Payee Anchor: {name} ({account_number})",
-            origin=SourceOrigin.SYSTEM_INSTRUCTION,
-            is_authorized_root=True,
-            node_id=f"root_payee_{payee_id}",
-        )
+        # Seed into AuthGraph DAG as authenticated root if not already registered
+        nid = f"root_payee_{payee_id}"
+        if nid not in self.agent.auth_graph.nodes:
+            self.agent.auth_graph.add_node(
+                content=f"Immutable Payee Anchor: {name} ({account_number})",
+                origin=SourceOrigin.SYSTEM_INSTRUCTION,
+                is_authorized_root=True,
+                node_id=nid,
+            )
 
     def _raise_violation_error(self, verdict: GuardVerdict) -> None:
         """Raise appropriate typed domain exception based on detected violations."""
@@ -168,6 +173,9 @@ class FinancialGuard:
             context_origin=origin,
         )
         verdict = GuardVerdict.from_task_result(task_result)
+        if self.policy == SecurityPolicy.MONITORING and not verdict.is_approved:
+            verdict.disbursement_executed = False
+            verdict.action_taken = "monitoring_logged"
 
         should_raise = self.raise_on_violation if raise_on_violation is None else raise_on_violation
         if should_raise and not verdict.is_approved:
@@ -255,7 +263,7 @@ class FinancialGuard:
         """Validate idempotency freshness and 3-Way Matching constraints."""
         violations: List[str] = []
         if idempotency_key is not None:
-            if not self.anchor.register_idempotency_key(idempotency_key, task_id):
+            if not self.anchor.check_idempotency_key(idempotency_key, task_id):
                 violations.append(
                     f"IDEMPOTENCY VIOLATION: Key '{idempotency_key}' was already processed. "
                     "Duplicate invoice submission or replay attack detected."
@@ -266,8 +274,30 @@ class FinancialGuard:
                 po_number=purchase_order_number,
                 invoice_amount=invoice_amount,
                 to_account=vendor_account,
+                mark_settled=False,
             )
             violations.extend(match_violations)
+        return violations
+
+    def _reconcile_context_with_po(
+        self, context: str, vendor_account: str, invoice_amount: float
+    ) -> List[str]:
+        """Cross-reconcile context extracted delta with validated PO parameters."""
+        violations = []
+        delta = self.agent.delta_extractor.extract(context)
+        if delta.target_account and delta.target_account != vendor_account:
+            violations.append(
+                f"CONTEXT DIVERGENCE: Context target account '{delta.target_account}' "
+                f"diverges from validated PO vendor account '{vendor_account}'."
+            )
+        if delta.amount is not None:
+            if math.isnan(delta.amount) or math.isinf(delta.amount):
+                violations.append("CONTEXT DIVERGENCE: Context disbursement amount is non-finite.")
+            elif delta.amount > invoice_amount + 0.01:
+                violations.append(
+                    f"CONTEXT DIVERGENCE: Context disbursement amount ${delta.amount:.2f} "
+                    f"diverges from validated PO invoice amount ${invoice_amount:.2f}."
+                )
         return violations
 
     def protect_with_po(
@@ -292,19 +322,10 @@ class FinancialGuard:
             task_id=task_id,
         )
 
-        # Cross-reconcile context extracted delta with validated PO parameters
         if not extra_violations:
-            delta = self.agent.delta_extractor.extract(context)
-            if delta.target_account and delta.target_account != vendor_account:
-                extra_violations.append(
-                    f"CONTEXT DIVERGENCE: Context target account '{delta.target_account}' "
-                    f"diverges from validated PO vendor account '{vendor_account}'."
-                )
-            if delta.amount is not None and delta.amount > invoice_amount + 0.01:
-                extra_violations.append(
-                    f"CONTEXT DIVERGENCE: Context disbursement amount ${delta.amount:.2f} "
-                    f"diverges from validated PO invoice amount ${invoice_amount:.2f}."
-                )
+            extra_violations.extend(
+                self._reconcile_context_with_po(context, vendor_account, invoice_amount)
+            )
 
         if extra_violations:
             verdict = GuardVerdict(
@@ -320,10 +341,41 @@ class FinancialGuard:
                 self._raise_violation_error(verdict)
             return verdict
 
-        return self.protect(
+        verdict = self.protect(
             task_query=task_query,
             context=context,
             task_id=task_id,
             origin=effective_origin,
+            raise_on_violation=raise_on_violation,
+        )
+        if verdict.is_approved:
+            if idempotency_key is not None:
+                self.anchor.register_idempotency_key(idempotency_key, task_id)
+            if purchase_order_number in self.anchor.purchase_orders:
+                self.anchor.purchase_orders[purchase_order_number]["is_settled"] = True
+        return verdict
+
+    def verify_invoice_and_disburse(
+        self,
+        task_query: str,
+        context: str,
+        purchase_order_number: str,
+        invoice_amount: float,
+        vendor_account: str,
+        idempotency_key: Optional[str] = None,
+        task_id: str = "TASK-AUTO",
+        origin: Optional[SourceOrigin] = None,
+        raise_on_violation: Optional[bool] = None,
+    ) -> GuardVerdict:
+        """Single-call high-level API to verify invoice with PO and disburse under fail-closed invariants."""
+        return self.protect_with_po(
+            task_query=task_query,
+            context=context,
+            purchase_order_number=purchase_order_number,
+            invoice_amount=invoice_amount,
+            vendor_account=vendor_account,
+            idempotency_key=idempotency_key,
+            task_id=task_id,
+            origin=origin,
             raise_on_violation=raise_on_violation,
         )

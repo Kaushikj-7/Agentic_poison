@@ -9,7 +9,6 @@ Tabs:
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 from agent_poi.memory.schema import SourceOrigin, FirewallStatus
 from agent_poi.memory.memory_firewall import MemoryFirewall
 from agent_poi.agent.agent_loop import AgentLoop
@@ -18,16 +17,13 @@ from agent_poi.agent.llm_provider import MockLLMProvider, OllamaProvider
 from agent_poi.attacks.tier1_static.minja_attack import MINJAAttack
 from agent_poi.attacks.tier1_static.sleeper_poison import SleeperPoisonAttack
 from agent_poi.attacks.tier1_static.cross_session_spi import CrossSessionSPIAttack
-from agent_poi.attacks.tier2_adaptive.adaptive_mutator import AdaptiveMutator
 from agent_poi.attacks.tier2_adaptive.attacker_judge_loop import AttackerJudgeLoop
-from agent_poi.evaluation.dataset import PairedDataset
 from agent_poi.evaluation.benchmark_runner import BenchmarkRunner
 from agent_poi.evaluation.pareto_sweeper import ParetoSweeper
 from agent_poi.financial.state_anchor import FinancialStateAnchor
 from agent_poi.financial.invariant_verifier import InvariantVerifier
 from agent_poi.financial.financial_agent import FinancialAgent
 from agent_poi.financial.eval.financial_benchmark import FinancialBenchmarkRunner
-from agent_poi.financial.eval.financial_dataset import FinancialBenchmarkDataset
 
 
 st.set_page_config(

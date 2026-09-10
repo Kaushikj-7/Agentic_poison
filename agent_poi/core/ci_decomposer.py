@@ -6,7 +6,7 @@ Grounded in Abdelnabi & Bagdasarian (arXiv:2605.17634, May 2026).
 """
 
 import re
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict, Any
 from agent_poi.memory.schema import CIPartition, SourceOrigin
 
 
@@ -57,56 +57,57 @@ class CIDecomposer:
         self.w_mismatch = weight_type_mismatch if weight_type_mismatch is not None else cfg_weights.get("type_mismatch", 0.20)
         self.w_frame = weight_framing if weight_framing is not None else cfg_weights.get("suspicious_framing", 0.10)
 
-    def decompose(self, content: str, declared_origin: SourceOrigin = SourceOrigin.UNTRUSTED_WEB) -> CIPartition:
-        """Decompose text into Contextual Integrity parameters and extract risk indicators."""
+    def _detect_signals(self, content: str) -> Dict[str, Any]:
+        """Extract self-asserted auth, imperative density, and framing indicators."""
         text_lower = content.lower()
-
-        # 1. Detect Self-Asserted Authorization / Transmission Principle
         auth_matches = []
         for pattern in self.SELF_ASSERTED_AUTH_PATTERNS:
             found = re.findall(pattern, text_lower)
             if found:
                 auth_matches.extend(found)
-        self_asserted_auth = len(auth_matches) > 0
-        auth_intensity = min(1.0, len(auth_matches) * 0.50)
 
-        # 2. Compute Imperative Verb Density
         words = re.findall(r"\b\w+\b", text_lower)
         total_words = max(1, len(words))
-        imp_count = 0
-        for pattern in self.IMPERATIVE_VERBS:
-            imp_count += len(re.findall(pattern, text_lower))
-        imperative_ratio = min(1.0, (imp_count / total_words) * 5.0)
+        imp_count = sum(len(re.findall(p, text_lower)) for p in self.IMPERATIVE_VERBS)
 
-        # 3. Detect Framing & Delimiter Escapes
         frame_matches = []
         for pattern in self.FRAMING_PATTERNS:
             found = re.findall(pattern, content, flags=re.IGNORECASE)
             if found:
                 frame_matches.extend(found)
-        framing_risk = min(1.0, len(frame_matches) * 0.50)
 
-        # 4. Infer CI 5-Tuple components
+        return {
+            "self_asserted_auth": len(auth_matches) > 0,
+            "auth_intensity": min(1.0, len(auth_matches) * 0.50),
+            "auth_matches": auth_matches,
+            "imp_count": imp_count,
+            "imperative_ratio": min(1.0, (imp_count / total_words) * 5.0),
+            "framing_matches": frame_matches,
+            "framing_risk": min(1.0, len(frame_matches) * 0.50),
+        }
+
+    def decompose(self, content: str, declared_origin: SourceOrigin = SourceOrigin.UNTRUSTED_WEB) -> CIPartition:
+        """Decompose text into Contextual Integrity parameters and extract risk indicators."""
+        sig = self._detect_signals(content)
         sender = self._infer_sender(content, declared_origin)
-        recipient = "agent_scaffolding"
         subject = self._infer_subject(content)
-        info_type = self._infer_info_type(content, imperative_ratio)
-        transmission_principle = "self_asserted_override" if self_asserted_auth else "normal_retrieval_flow"
+        info_type = self._infer_info_type(content, sig["imperative_ratio"])
+        trans_principle = "self_asserted_override" if sig["self_asserted_auth"] else "normal_retrieval_flow"
 
         return CIPartition(
             sender=sender,
-            recipient=recipient,
+            recipient="agent_scaffolding",
             subject=subject,
             info_type=info_type,
-            transmission_principle=transmission_principle,
-            self_asserted_auth=self_asserted_auth,
-            imperative_ratio=imperative_ratio,
-            framing_risk=framing_risk,
+            transmission_principle=trans_principle,
+            self_asserted_auth=sig["self_asserted_auth"],
+            imperative_ratio=sig["imperative_ratio"],
+            framing_risk=sig["framing_risk"],
             raw_signals={
-                "auth_intensity": auth_intensity,
-                "auth_matches": auth_matches,
-                "imp_count": imp_count,
-                "framing_matches": frame_matches,
+                "auth_intensity": sig["auth_intensity"],
+                "auth_matches": sig["auth_matches"],
+                "imp_count": sig["imp_count"],
+                "framing_matches": sig["framing_matches"],
             },
         )
 

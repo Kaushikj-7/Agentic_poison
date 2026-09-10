@@ -8,13 +8,14 @@ import math
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from agent_poi.financial.state_anchor import FinancialStateAnchor
-from agent_poi.financial.invariant_verifier import InvariantVerifier, InvariantVerificationResult
-from agent_poi.financial.delta_extractor import ContextualFinancialDelta, FinancialDeltaExtractor
+from agent_poi.financial.invariant_verifier import InvariantVerifier
 from agent_poi.financial.logger import get_financial_logger, log_audit_event
 from agent_poi.financial.exceptions import (
     InvariantViolationError,
     UnauthorizedPayeeError,
     DisbursementCeilingExceededError,
+    UntrustedLineageError,
+    ImperativeDivergenceError,
 )
 from agent_poi.core.alignment_gate import TaskShieldGate
 from agent_poi.core.taint_tracker import AuthGraphDAG
@@ -117,13 +118,23 @@ class FinancialAgent:
     ) -> Dict[str, Any]:
         """Record and log an invariant-blocked disbursement attempt."""
         amt_str = self._format_amount(amount)
-        record = self.anchor.record_disbursement(
-            to_account=to_account,
-            amount=amount,
-            invoice_id=invoice_id,
-            status="BLOCKED_INVARIANT_VIOLATION",
-            reason="; ".join(violations),
-        )
+        try:
+            record = self.anchor.record_disbursement(
+                to_account=to_account,
+                amount=amount,
+                invoice_id=invoice_id,
+                status="BLOCKED_INVARIANT_VIOLATION",
+                reason="; ".join(violations),
+            )
+        except ValueError:
+            record = {
+                "transaction_id": f"BLOCKED-{len(self.anchor.execution_ledger) + 1:05d}",
+                "to_account": to_account,
+                "amount": amount,
+                "invoice_id": invoice_id,
+                "status": "BLOCKED_INVARIANT_VIOLATION",
+                "reason": "; ".join(violations),
+            }
         log_audit_event(
             self.logger,
             "DISBURSEMENT_BLOCKED",
@@ -182,6 +193,20 @@ class FinancialAgent:
                     raise UnauthorizedPayeeError(to_account, details={"violations": violations})
                 if isinstance(amount, (int, float)) and amount > self.anchor.per_transaction_limit:
                     raise DisbursementCeilingExceededError(amount, self.anchor.per_transaction_limit, details={"violations": violations})
+                for v in violations:
+                    v_lower = v.lower()
+                    if any(k in v_lower for k in ("untrusted lineage", "unauthorized origin", "taint", "authgraph", "authority")):
+                        raise UntrustedLineageError(
+                            node_id=contributing_node_ids[0] if contributing_node_ids else "sink",
+                            origin=v,
+                            details={"violations": violations},
+                        )
+                    if any(k in v_lower for k in ("imperative", "directive", "task shield")):
+                        raise ImperativeDivergenceError(
+                            divergence_score=1.0,
+                            threshold=0.0,
+                            details={"violations": violations},
+                        )
                 raise InvariantViolationError("; ".join(violations), details={"violations": violations})
             return self._handle_blocked_disbursement(to_account, amount, invoice_id, violations)
         return self._handle_executed_disbursement(to_account, amount, invoice_id)
@@ -226,12 +251,15 @@ class FinancialAgent:
         ):
             payee = self.anchor.get_payee(delta.target_account)
             root_node_id = f"root_payee_{payee.payee_id}"
+            action_id = f"action_{task_id}"
+            if action_id in self.auth_graph.nodes:
+                action_id = f"{action_id}_{len(self.auth_graph.nodes) + 1}"
             verified_action = self.auth_graph.add_node(
                 content=f"Verified consensus disbursement: {delta.target_account} ${delta.amount:.2f}",
                 origin=SourceOrigin.INTERNAL_TOOL,
                 is_authorized_root=False,
                 parent_ids=[root_node_id],
-                node_id=f"action_{task_id}",
+                node_id=action_id,
             )
             return [verified_action.node_id]
         return [context_node_id]
@@ -283,11 +311,14 @@ class FinancialAgent:
         """Process incoming financial instruction conditioned on retrieved memory/context."""
         task_query = str(task_query or "")
         retrieved_context = str(retrieved_context or "")
+        ctx_id = f"ctx_{task_id}"
+        if ctx_id in self.auth_graph.nodes:
+            ctx_id = f"{ctx_id}_{len(self.auth_graph.nodes) + 1}"
         context_node = self.auth_graph.add_node(
             content=retrieved_context,
             origin=context_origin,
             is_authorized_root=(context_origin == SourceOrigin.VERIFIED_USER),
-            node_id=f"ctx_{task_id}",
+            node_id=ctx_id,
         )
 
         admitted, decision, civ_violations, ts_score = self._evaluate_task_gates(

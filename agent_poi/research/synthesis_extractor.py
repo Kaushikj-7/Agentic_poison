@@ -10,7 +10,7 @@ and BibTeX generation for the core academic literature referenced by AgentPOI:
 6. MINJA & Sleeper Agents (Subramanian et al., 2024; Hubinger et al., 2024)
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from pydantic import BaseModel
 
 

@@ -180,6 +180,8 @@ class _UnusedImportVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module == "__future__":
+            return
         for alias in node.names:
             if alias.name != "*":
                 name = alias.asname or alias.name
@@ -217,13 +219,51 @@ class CodePrinciplesAuditor:
         print(report.summary())
     """
 
-    def audit_file(self, filepath: str) -> FileAuditReport:
-        """Run all principle checks on a single Python source file."""
+    @staticmethod
+    def _check_hardcoded_secrets(filepath: str, lines: List[str]) -> List[PrincipleViolation]:
+        """Scan file lines for credentials or secrets."""
+        violations = []
+        for i, line in enumerate(lines, start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            for pattern in _HARDCODED_SECRET_PATTERNS:
+                if pattern.search(stripped):
+                    violations.append(PrincipleViolation(
+                        severity="CRITICAL",
+                        category="SECURITY",
+                        location=f"{filepath}:L{i}",
+                        message=f"Potential hardcoded secret detected: '{stripped[:60]}...'",
+                    ))
+                    break
+        return violations
+
+    @staticmethod
+    def _run_ast_visitors(filepath: str, source: str, tree: ast.AST) -> List[PrincipleViolation]:
+        """Execute all AST visitors and collect their violations."""
+        violations = []
+        fn_visitor = _FunctionLengthVisitor(filepath)
+        fn_visitor.visit(tree)
+        violations.extend(fn_visitor.violations)
+
+        nest_visitor = _NestingDepthVisitor(filepath)
+        nest_visitor.visit(tree)
+        violations.extend(nest_visitor.violations)
+
+        imp_visitor = _UnusedImportVisitor(filepath, source)
+        imp_visitor.visit(tree)
+        imp_visitor.check_unused()
+        violations.extend(imp_visitor.violations)
+        return violations
+
+    @staticmethod
+    def _read_source_safe(filepath: str) -> Tuple[Optional[str], Optional[FileAuditReport]]:
+        """Read source file safely, returning error report on failure."""
         try:
             with open(filepath, "r", encoding="utf-8", errors="replace") as fh:
-                source = fh.read()
+                return fh.read(), None
         except OSError as exc:
-            return FileAuditReport(
+            return None, FileAuditReport(
                 filepath=filepath,
                 line_count=0,
                 violations=[PrincipleViolation(
@@ -234,11 +274,16 @@ class CodePrinciplesAuditor:
                 )],
             )
 
+    def audit_file(self, filepath: str) -> FileAuditReport:
+        """Run all principle checks on a single Python source file."""
+        source, err_report = self._read_source_safe(filepath)
+        if err_report is not None:
+            return err_report
+
         lines = source.splitlines()
         line_count = len(lines)
         violations: List[PrincipleViolation] = []
 
-        # ── 1. File size ────────────────────────────────────────
         if line_count > MAX_FILE_LINES:
             violations.append(PrincipleViolation(
                 severity="HIGH",
@@ -261,36 +306,8 @@ class CodePrinciplesAuditor:
             ))
             return FileAuditReport(filepath=filepath, line_count=line_count, violations=violations)
 
-        # ── 2. Function length ─────────────────────────────────
-        fn_visitor = _FunctionLengthVisitor(filepath)
-        fn_visitor.visit(tree)
-        violations.extend(fn_visitor.violations)
-
-        # ── 3. Nesting depth ───────────────────────────────────
-        nest_visitor = _NestingDepthVisitor(filepath)
-        nest_visitor.visit(tree)
-        violations.extend(nest_visitor.violations)
-
-        # ── 4. Unused imports ──────────────────────────────────
-        imp_visitor = _UnusedImportVisitor(filepath, source)
-        imp_visitor.visit(tree)
-        imp_visitor.check_unused()
-        violations.extend(imp_visitor.violations)
-
-        # ── 5. Hardcoded secrets ───────────────────────────────
-        for i, line in enumerate(lines, start=1):
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                continue
-            for pattern in _HARDCODED_SECRET_PATTERNS:
-                if pattern.search(stripped):
-                    violations.append(PrincipleViolation(
-                        severity="CRITICAL",
-                        category="SECURITY",
-                        location=f"{filepath}:L{i}",
-                        message=f"Potential hardcoded secret detected: '{stripped[:60]}...'",
-                    ))
-                    break
+        violations.extend(self._run_ast_visitors(filepath, source, tree))
+        violations.extend(self._check_hardcoded_secrets(filepath, lines))
 
         return FileAuditReport(
             filepath=filepath,

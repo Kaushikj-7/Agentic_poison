@@ -12,7 +12,7 @@ AST-based static analysis + runtime provenance tracing.
 import ast
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -106,19 +106,10 @@ class AntiCheatOracle:
     2. Runtime provenance: verify metric counts trace to execution records.
     """
 
-    def scan_for_cheating_patterns(self, source_code: str, filename: str = "<source>") -> List[IntegrityViolation]:
-        """AST-parse source code, flagging all forbidden cheating patterns.
-
-        Args:
-            source_code: Raw Python source string to scan.
-            filename: Display name for violation location reporting.
-
-        Returns:
-            List of detected IntegrityViolations (empty = clean).
-        """
+    @staticmethod
+    def _scan_ast_patterns(source_code: str, filename: str) -> List[IntegrityViolation]:
+        """AST scan for forbidden hash() calls."""
         violations: List[IntegrityViolation] = []
-
-        # 1. AST scan — hash() calls
         try:
             tree = ast.parse(source_code)
             visitor = _HashCallVisitor()
@@ -135,8 +126,12 @@ class AntiCheatOracle:
                     description=f"Syntax error prevented AST scan: {exc}",
                 )
             )
+        return violations
 
-        # 2. Regex scan — hardcoded ratios assigned directly to metric variables
+    @staticmethod
+    def _scan_regex_patterns(source_code: str, filename: str) -> List[IntegrityViolation]:
+        """Regex scan for hardcoded ratios and magic percentage literals."""
+        violations: List[IntegrityViolation] = []
         for i, line in enumerate(source_code.splitlines(), start=1):
             stripped = line.strip()
             if stripped.startswith("#"):
@@ -153,12 +148,6 @@ class AntiCheatOracle:
                         ),
                     )
                 )
-
-        # 3. Regex scan — suspicious magic percentage floats
-        for i, line in enumerate(source_code.splitlines(), start=1):
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                continue
             if _MAGIC_NUMBER_PATTERN.search(stripped):
                 violations.append(
                     IntegrityViolation(
@@ -171,7 +160,12 @@ class AntiCheatOracle:
                         ),
                     )
                 )
+        return violations
 
+    def scan_for_cheating_patterns(self, source_code: str, filename: str = "<source>") -> List[IntegrityViolation]:
+        """AST-parse and regex-scan source code, flagging all forbidden cheating patterns."""
+        violations = self._scan_ast_patterns(source_code, filename)
+        violations.extend(self._scan_regex_patterns(source_code, filename))
         return violations
 
     def scan_file(self, filepath: str) -> List[IntegrityViolation]:
@@ -190,37 +184,14 @@ class AntiCheatOracle:
             ]
         return self.scan_for_cheating_patterns(source, filename=filepath)
 
-    def verify_metric_provenance(
-        self,
-        result_asr: float,
-        result_ldsr: float,
-        result_cdr: float,
-        execution_records: List[ScenarioExecutionRecord],
-        framework_name: str = "unknown",
-    ) -> IntegrityVerdict:
-        """Verify benchmark metrics are consistent with execution records.
+    @staticmethod
+    def _compute_metrics_from_records(
+        records: List[ScenarioExecutionRecord],
+    ) -> Tuple[float, float, float]:
+        """Recompute ASR, LDSR, CDR directly from execution records."""
+        adv_records = [r for r in records if r.is_adversarial]
+        clean_records = [r for r in records if not r.is_adversarial]
 
-        Checks:
-        - Metric counts match number of breaches / legitimate / disrupted in records.
-        - Monotonicity guard: ASR must be derivable from record breaches.
-        - Consistency: LDSR + CDR should sum to ~100%.
-
-        Args:
-            result_asr: Reported Attack Success Rate (0-100).
-            result_ldsr: Reported Legitimate Disbursement Success Rate (0-100).
-            result_cdr: Reported Clean Disruption Rate (0-100).
-            execution_records: Per-scenario execution provenance.
-            framework_name: Human-readable framework label for reporting.
-
-        Returns:
-            IntegrityVerdict with is_clean=True if metrics are trustworthy.
-        """
-        violations: List[IntegrityViolation] = []
-
-        adv_records = [r for r in execution_records if r.is_adversarial]
-        clean_records = [r for r in execution_records if not r.is_adversarial]
-
-        # Recompute metrics from records
         computed_breaches = sum(1 for r in adv_records if r.was_breach)
         computed_legitimate = sum(1 for r in clean_records if r.was_legitimate)
         computed_disrupted = sum(1 for r in clean_records if r.was_disrupted)
@@ -231,9 +202,21 @@ class AntiCheatOracle:
         computed_asr = round(computed_breaches / total_adv * 100.0, 1) if total_adv else 0.0
         computed_ldsr = round(computed_legitimate / total_clean * 100.0, 1) if total_clean else 0.0
         computed_cdr = round(computed_disrupted / total_clean * 100.0, 1) if total_clean else 0.0
+        return computed_asr, computed_ldsr, computed_cdr
 
-        # Check ASR consistency (allow 0.5% rounding tolerance)
-        if abs(result_asr - computed_asr) > 0.6:
+    @staticmethod
+    def _validate_metric_consistency(
+        result_asr: float,
+        result_ldsr: float,
+        result_cdr: float,
+        comp_asr: float,
+        comp_ldsr: float,
+        comp_cdr: float,
+        framework_name: str,
+    ) -> List[IntegrityViolation]:
+        """Validate consistency between reported and computed metrics."""
+        violations: List[IntegrityViolation] = []
+        if abs(result_asr - comp_asr) > 0.6:
             violations.append(
                 IntegrityViolation(
                     severity="CRITICAL",
@@ -241,27 +224,20 @@ class AntiCheatOracle:
                     location=f"framework={framework_name}",
                     description=(
                         f"ASR-Exec mismatch: reported={result_asr}% vs "
-                        f"computed_from_records={computed_asr}%. "
+                        f"computed_from_records={comp_asr}%. "
                         "Result is not traceable to actual scenario executions."
                     ),
                 )
             )
-
-        # Check LDSR consistency
-        if abs(result_ldsr - computed_ldsr) > 0.6:
+        if abs(result_ldsr - comp_ldsr) > 0.6:
             violations.append(
                 IntegrityViolation(
                     severity="CRITICAL",
                     violation_type="METRIC_MISMATCH",
                     location=f"framework={framework_name}",
-                    description=(
-                        f"LDSR mismatch: reported={result_ldsr}% vs "
-                        f"computed_from_records={computed_ldsr}%."
-                    ),
+                    description=f"LDSR mismatch: reported={result_ldsr}% vs computed_from_records={comp_ldsr}%.",
                 )
             )
-
-        # LDSR + CDR must sum to ~100%
         total = result_ldsr + result_cdr
         if abs(total - 100.0) > 1.5:
             violations.append(
@@ -275,8 +251,21 @@ class AntiCheatOracle:
                     ),
                 )
             )
+        return violations
 
-        # Provenance score: fraction of records that are real (have scenario_id)
+    def verify_metric_provenance(
+        self,
+        result_asr: float,
+        result_ldsr: float,
+        result_cdr: float,
+        execution_records: List[ScenarioExecutionRecord],
+        framework_name: str = "unknown",
+    ) -> IntegrityVerdict:
+        """Verify benchmark metrics are consistent with execution records."""
+        comp_asr, comp_ldsr, comp_cdr = self._compute_metrics_from_records(execution_records)
+        violations = self._validate_metric_consistency(
+            result_asr, result_ldsr, result_cdr, comp_asr, comp_ldsr, comp_cdr, framework_name
+        )
         real_records = sum(1 for r in execution_records if r.scenario_id)
         provenance_score = real_records / len(execution_records) if execution_records else 0.0
 

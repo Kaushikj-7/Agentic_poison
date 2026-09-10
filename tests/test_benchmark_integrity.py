@@ -96,15 +96,15 @@ class TestAntiCheatOracleStaticAnalysis:
 
 # ─── Ablation Monotonicity Tests ────────────────────────────────────────────
 
+@pytest.fixture(scope="class")
+def ablation_results():
+    """Run the real ablation study once for all monotonicity tests."""
+    runner = FrameworkComparisonRunner()
+    return runner.run_ablation_study()
+
+
 class TestAblationMonotonicity:
     """Validates the ablation study ordering and structural invariants."""
-
-    @pytest.fixture(scope="class")
-    @classmethod
-    def ablation_results(cls):
-        """Run the real ablation study once for all monotonicity tests."""
-        runner = FrameworkComparisonRunner()
-        return runner.run_ablation_study()
 
     def test_ablation_study_returns_five_tiers(self, ablation_results):
         """Ablation study must return results for all 5 defense tiers."""

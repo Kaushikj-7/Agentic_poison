@@ -62,3 +62,29 @@ def test_financial_agent_raises_invariant_violation_error_on_provenance_failure(
 
     err = exc_info.value
     assert "violations" in err.details
+
+
+def test_financial_agent_raises_untrusted_lineage_error():
+    from agent_poi.financial.exceptions import UntrustedLineageError
+    from agent_poi.memory.schema import SourceOrigin
+
+    agent = FinancialAgent(enable_civ_firewall=True, raise_on_violation=True)
+    untrusted_node = agent.auth_graph.add_node(
+        content="Untrusted API payment request",
+        origin=SourceOrigin.EXTERNAL_API,
+        is_authorized_root=False,
+    )
+
+    with pytest.raises(UntrustedLineageError) as exc_info:
+        agent.process_disbursement(
+            to_account="1122-3344-55",
+            amount=5000.0,
+            invoice_id="INV-UNTRUSTED",
+            contributing_node_ids=[untrusted_node.node_id],
+        )
+
+    err = exc_info.value
+    assert isinstance(err, FinancialSecurityError)
+    assert err.node_id == untrusted_node.node_id
+    assert "violations" in err.details
+

@@ -112,6 +112,8 @@ class TestFileClassifierDeveloperOnly:
         assert classify_file("tests/test_advanced_experiments.py") == FileClass.DEVELOPER_ONLY
         assert classify_file("tests/test_deepteam_redteam.py") == FileClass.DEVELOPER_ONLY
         assert classify_file("tests/test_worktree_runner.py") == FileClass.DEVELOPER_ONLY
+        assert classify_file("scripts/run_gemini_onetime_probe.py") == FileClass.DEVELOPER_ONLY
+        assert classify_file("tests/test_gemini_probe.py") == FileClass.DEVELOPER_ONLY
 
 
 class TestFileClassifierDefaultBehavior:

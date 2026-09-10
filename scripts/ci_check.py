@@ -68,9 +68,6 @@ def run_unit_tests() -> Tuple[bool, str]:
         "--basetemp=.pytest_tmp",
         "-o",
         "cache_dir=.pytest_tmp/cache",
-        "--ignore=tests/test_advanced_experiments.py",
-        "--ignore=tests/test_deepteam_redteam.py",
-        "--ignore=tests/test_worktree_runner.py",
     ]
     res = subprocess.run(cmd, capture_output=True, text=True, env=env)
     if res.returncode != 0:
@@ -85,12 +82,9 @@ def run_unit_tests() -> Tuple[bool, str]:
                 "--basetemp=.pytest_tmp",
                 "-o",
                 "cache_dir=.pytest_tmp/cache",
-                "--ignore=tests/test_advanced_experiments.py",
-                "--ignore=tests/test_deepteam_redteam.py",
-                "--ignore=tests/test_worktree_runner.py",
             ])
             is_ok = ret == 0
-            return is_ok, "163 passed" if is_ok else "tests failed"
+            return is_ok, "all tests passed" if is_ok else "tests failed"
         except Exception as e:
             return False, str(e)
     is_ok = res.returncode == 0

@@ -52,6 +52,48 @@ class MemoryFirewall:
     # Layer 1: Write-Time Ingestion Pipeline
     # ─────────────────────────────────────────────────────────────
 
+    def _route_to_storage(
+        self, decision: FirewallDecision, item: MemoryItem
+    ) -> Tuple[FirewallDecision, Optional[MemoryItem]]:
+        """Route evaluated memory item to active, quarantine, or blocked log."""
+        if decision.status == FirewallStatus.ALLOWED:
+            self.vector_store.add_active(item)
+            return decision, item
+        elif decision.status == FirewallStatus.QUARANTINED:
+            self.vector_store.add_quarantine(item, decision)
+            return decision, item
+        self.vector_store.log_blocked(decision)
+        return decision, None
+
+    def _evaluate_and_record(
+        self,
+        item_id: str,
+        content: str,
+        origin: SourceOrigin,
+        r_ci: float,
+        reasons: List[str],
+        parents: List[str],
+    ) -> FirewallDecision:
+        """Compute trust decision and record node in provenance DAG."""
+        parent_scores = self.taint_tracker.get_parent_scores(parents)
+        decision = self.trust_scorer.evaluate(
+            item_id=item_id,
+            content=content,
+            origin=origin,
+            r_ci=r_ci,
+            reasons=reasons,
+            parent_trust_scores=parent_scores,
+        )
+        direct_trust = self.trust_scorer.compute_direct_trust(origin, r_ci)
+        self.taint_tracker.register_node(
+            node_id=item_id,
+            origin=origin,
+            direct_trust=direct_trust,
+            final_trust=decision.trust_score,
+            parent_ids=parents,
+        )
+        return decision
+
     def ingest_memory(
         self,
         item_id: str,
@@ -64,34 +106,10 @@ class MemoryFirewall:
         parents = parent_ids or []
         meta = metadata or {}
 
-        # 1. CI Parameter Decomposition & Risk Scoring
         ci_partition = self.ci_decomposer.decompose(content, declared_origin=origin)
         r_ci, reasons = self.ci_decomposer.compute_risk_score(ci_partition)
+        decision = self._evaluate_and_record(item_id, content, origin, r_ci, reasons, parents)
 
-        # 2. Lookup ancestor trust from Provenance DAG
-        parent_scores = self.taint_tracker.get_parent_scores(parents)
-
-        # 3. Compute CTP Trust Score & Decision
-        decision = self.trust_scorer.evaluate(
-            item_id=item_id,
-            content=content,
-            origin=origin,
-            r_ci=r_ci,
-            reasons=reasons,
-            parent_trust_scores=parent_scores,
-        )
-
-        # 4. Update Provenance DAG
-        direct_trust = self.trust_scorer.compute_direct_trust(origin, r_ci)
-        self.taint_tracker.register_node(
-            node_id=item_id,
-            origin=origin,
-            direct_trust=direct_trust,
-            final_trust=decision.trust_score,
-            parent_ids=parents,
-        )
-
-        # 5. Build MemoryItem
         item = MemoryItem(
             id=item_id,
             content=content,
@@ -102,17 +120,7 @@ class MemoryFirewall:
             status=decision.status,
             metadata=meta,
         )
-
-        # 6. Route to Storage
-        if decision.status == FirewallStatus.ALLOWED:
-            self.vector_store.add_active(item)
-            return decision, item
-        elif decision.status == FirewallStatus.QUARANTINED:
-            self.vector_store.add_quarantine(item, decision)
-            return decision, item
-        else:
-            self.vector_store.log_blocked(decision)
-            return decision, None
+        return self._route_to_storage(decision, item)
 
     # ─────────────────────────────────────────────────────────────
     # Layer 3: Retrieval-Time Alignment Pipeline

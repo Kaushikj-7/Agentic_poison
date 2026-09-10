@@ -164,3 +164,10 @@ scripts/run_worktree_redteam.py
 tests/test_advanced_experiments.py
 tests/test_deepteam_redteam.py
 tests/test_worktree_runner.py
+
+# -----------------------------------------------------------------------------
+# 16. Local Experiment Probes & Generated Benchmark JSONs
+# -----------------------------------------------------------------------------
+docs/research/
+scripts/run_gemini_onetime_probe.py
+tests/test_gemini_probe.py

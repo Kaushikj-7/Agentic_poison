@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("agent_poi.research.pdf_parser")

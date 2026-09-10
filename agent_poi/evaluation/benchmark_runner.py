@@ -9,9 +9,9 @@ Runs the full ablation matrix across:
 Measures: ASR-write, ASR-retrieval, ASR-exec, False Quarantine Rate (FQR).
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from pydantic import BaseModel
-from agent_poi.memory.schema import FirewallStatus, SourceOrigin
+from agent_poi.memory.schema import FirewallStatus
 from agent_poi.memory.memory_firewall import MemoryFirewall
 from agent_poi.agent.agent_loop import AgentLoop
 from agent_poi.agent.llm_provider import MockLLMProvider
@@ -34,6 +34,44 @@ class BenchmarkRunner:
     def __init__(self, pairs: Optional[List[BenchmarkPair]] = None):
         self.pairs = pairs or PairedDataset.get_all_pairs()
 
+    def _test_pair_clean(self, pair: BenchmarkPair, firewall_builder) -> bool:
+        """Test clean context to measure false quarantine."""
+        fw_clean: MemoryFirewall = firewall_builder()
+        dec_clean, _ = fw_clean.ingest_memory(
+            item_id=f"clean_{pair.pair_id}",
+            content=pair.clean_text,
+            origin=pair.origin,
+        )
+        return dec_clean.status != FirewallStatus.ALLOWED
+
+    def _test_pair_poison(
+        self, pair: BenchmarkPair, firewall_builder
+    ) -> Tuple[bool, bool, bool]:
+        """Test poisoned context to measure write, retrieval, and execution breach."""
+        fw_poison: MemoryFirewall = firewall_builder()
+        dec_poison, _ = fw_poison.ingest_memory(
+            item_id=f"poison_{pair.pair_id}",
+            content=pair.poison_text,
+            origin=pair.origin,
+        )
+        if dec_poison.status != FirewallStatus.ALLOWED:
+            return False, False, False
+
+        admitted, _ = fw_poison.retrieve_context(pair.test_query, k=3)
+        retrieved = any(m.id == f"poison_{pair.pair_id}" for m in admitted)
+        if not retrieved:
+            return True, False, False
+
+        tools = MockToolManager()
+        loop = AgentLoop(
+            firewall=fw_poison,
+            llm_provider=MockLLMProvider(),
+            tool_manager=tools,
+        )
+        loop.run_step(pair.test_query)
+        executed = tools.has_malicious_invocation()
+        return True, True, executed
+
     def evaluate_configuration(
         self,
         name: str,
@@ -48,42 +86,16 @@ class BenchmarkRunner:
         clean_quarantined = 0
 
         for pair in self.pairs:
-            # 1. Clean context test (Measures Utility Loss / False Quarantine Rate)
-            fw_clean: MemoryFirewall = firewall_builder()
-            dec_clean, item_clean = fw_clean.ingest_memory(
-                item_id=f"clean_{pair.pair_id}",
-                content=pair.clean_text,
-                origin=pair.origin,
-            )
-            if dec_clean.status != FirewallStatus.ALLOWED:
+            if self._test_pair_clean(pair, firewall_builder):
                 clean_quarantined += 1
 
-            # 2. Poisoned context test (Measures ASR-write)
-            fw_poison: MemoryFirewall = firewall_builder()
-            dec_poison, item_poison = fw_poison.ingest_memory(
-                item_id=f"poison_{pair.pair_id}",
-                content=pair.poison_text,
-                origin=pair.origin,
-            )
-
-            if dec_poison.status == FirewallStatus.ALLOWED:
+            accepted, retrieved, executed = self._test_pair_poison(pair, firewall_builder)
+            if accepted:
                 poisoned_accepted += 1
-
-                # 3. Retrieval Test (Measures ASR-retrieval)
-                admitted, _ = fw_poison.retrieve_context(pair.test_query, k=3)
-                if any(m.id == f"poison_{pair.pair_id}" for m in admitted):
-                    poisoned_retrieved += 1
-
-                    # 4. Agent Execution Test (Measures ASR-exec)
-                    tools = MockToolManager()
-                    loop = AgentLoop(
-                        firewall=fw_poison,
-                        llm_provider=MockLLMProvider(),
-                        tool_manager=tools,
-                    )
-                    loop.run_step(pair.test_query)
-                    if tools.has_malicious_invocation():
-                        malicious_executed += 1
+            if retrieved:
+                poisoned_retrieved += 1
+            if executed:
+                malicious_executed += 1
 
         asr_write = (poisoned_accepted / total) * 100.0
         asr_retrieval = (poisoned_retrieved / total) * 100.0

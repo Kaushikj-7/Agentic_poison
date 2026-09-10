@@ -18,57 +18,28 @@ class PayeeAccount:
     max_single_disbursement: float = 25000.0
 
 
+_PAYEE_SPECS = [
+    ("1122-3344-55", "PAYEE-01", "Acme Cloud Infrastructure Inc.", "021000021", "cloud_hosting", 50000.0),
+    ("2233-4455-66", "PAYEE-02", "Global Office Logistics LLC", "071000288", "office_supplies", 15000.0),
+    ("3344-5566-77", "PAYEE-03", "Apex Payroll Escrow Corp", "122000496", "payroll_escrow", 100000.0),
+    ("4455-6677-88", "PAYEE-04", "Municipal Power & Utility Services", "011000015", "utility_services", 25000.0),
+    ("5566-7788-99", "PAYEE-05", "SecureShield Cyber Auditing LLC", "031000050", "professional_services", 25000.0),
+    ("6677-8899-00", "PAYEE-06", "Vanguard Corporate Escrow", "041000012", "corporate_escrow", 25000.0),
+]
+
+
 def _build_default_payees() -> Dict[str, PayeeAccount]:
     """Construct immutable pre-approved corporate payee directory."""
     return {
-        "1122-3344-55": PayeeAccount(
-            payee_id="PAYEE-01",
-            name="Acme Cloud Infrastructure Inc.",
-            account_number="1122-3344-55",
-            routing_number="021000021",
-            category="cloud_hosting",
-            max_single_disbursement=50000.0,
-        ),
-        "2233-4455-66": PayeeAccount(
-            payee_id="PAYEE-02",
-            name="Global Office Logistics LLC",
-            account_number="2233-4455-66",
-            routing_number="071000288",
-            category="office_supplies",
-            max_single_disbursement=15000.0,
-        ),
-        "3344-5566-77": PayeeAccount(
-            payee_id="PAYEE-03",
-            name="Apex Payroll Escrow Corp",
-            account_number="3344-5566-77",
-            routing_number="122000496",
-            category="payroll_escrow",
-            max_single_disbursement=100000.0,
-        ),
-        "4455-6677-88": PayeeAccount(
-            payee_id="PAYEE-04",
-            name="Municipal Power & Utility Services",
-            account_number="4455-6677-88",
-            routing_number="011000015",
-            category="utility_services",
-            max_single_disbursement=25000.0,
-        ),
-        "5566-7788-99": PayeeAccount(
-            payee_id="PAYEE-05",
-            name="SecureShield Cyber Auditing LLC",
-            account_number="5566-7788-99",
-            routing_number="031000050",
-            category="professional_services",
-            max_single_disbursement=25000.0,
-        ),
-        "6677-8899-00": PayeeAccount(
-            payee_id="PAYEE-06",
-            name="Vanguard Corporate Escrow",
-            account_number="6677-8899-00",
-            routing_number="041000012",
-            category="corporate_escrow",
-            max_single_disbursement=25000.0,
-        ),
+        acc: PayeeAccount(
+            payee_id=pid,
+            name=name,
+            account_number=acc,
+            routing_number=rt,
+            category=cat,
+            max_single_disbursement=limit,
+        )
+        for acc, pid, name, rt, cat, limit in _PAYEE_SPECS
     }
 
 
@@ -116,6 +87,14 @@ class FinancialStateAnchor:
         # Purchase Order registry — enables 3-Way Matching enforcement
         # Maps po_number -> {"vendor_account": str, "authorized_amount": float, "fulfilled": bool}
         self.purchase_orders: Dict[str, Dict[str, Any]] = {}
+
+    def check_idempotency_key(self, key: str, tx_id: Optional[str] = None) -> bool:
+        """Check if an idempotency key is fresh without registering it.
+
+        Returns True if the key is fresh (not yet registered).
+        Returns False if the key was already registered (replay detected).
+        """
+        return key not in self.idempotency_keys
 
     def register_idempotency_key(self, key: str, tx_id: str) -> bool:
         """Register a transaction idempotency key.
@@ -166,45 +145,20 @@ class FinancialStateAnchor:
             return False, violations
         return True, violations
 
-    def validate_three_way_match(
-        self,
-        po_number: str,
-        invoice_amount: float,
-        to_account: str,
-        tolerance_pct: float = 0.02,
-    ) -> Tuple[bool, List[str]]:
-        """3-Way Matching: invoice must match PO commitment and goods receipt.
-
-        Validates:
-          1. PO exists and is not already settled.
-          2. Invoice amount is finite and positive.
-          3. Invoice amount <= authorized PO amount (within tolerance).
-          4. Goods/services receipt is confirmed.
-          5. Vendor account matches the PO's registered vendor.
-        """
-        violations: List[str] = []
-
-        is_finite, amt_viols = self._validate_invoice_amount_finite(invoice_amount)
-        if not is_finite:
-            return False, amt_viols
-
-        if po_number not in self.purchase_orders:
-            violations.append(
-                f"3-WAY MATCH FAIL: PO '{po_number}' not found in approved purchase orders."
-            )
-            return False, violations
-
-        po = self.purchase_orders[po_number]
+    def _check_po_match_fields(
+        self, po: Dict[str, Any], to_account: str, invoice_amount: float, tolerance_pct: float
+    ) -> List[str]:
+        """Validate account, amount threshold, and goods receipt against PO record."""
+        violations = []
         if po["is_settled"]:
             violations.append(
-                f"3-WAY MATCH FAIL: PO '{po_number}' has already been settled — replay/duplicate detected."
+                f"3-WAY MATCH FAIL: PO '{po.get('po_number', '')}' has already been settled — replay/duplicate detected."
             )
         if po["vendor_account"] != to_account:
             violations.append(
                 f"3-WAY MATCH FAIL: Invoice vendor account '{to_account}' "
                 f"does not match PO registered vendor '{po['vendor_account']}'."
             )
-
         authorized = po["authorized_amount"]
         tolerance = authorized * tolerance_pct
         if invoice_amount > authorized + tolerance:
@@ -212,14 +166,32 @@ class FinancialStateAnchor:
                 f"3-WAY MATCH FAIL: Invoice amount ${invoice_amount:.2f} exceeds "
                 f"PO authorized amount ${authorized:.2f} (tolerance: ${tolerance:.2f})."
             )
-
         if not po["goods_receipt_confirmed"]:
             violations.append(
-                f"3-WAY MATCH FAIL: Goods/services receipt not confirmed for PO '{po_number}'."
+                f"3-WAY MATCH FAIL: Goods/services receipt not confirmed for PO."
             )
+        return violations
 
+    def validate_three_way_match(
+        self,
+        po_number: str,
+        invoice_amount: float,
+        to_account: str,
+        tolerance_pct: float = 0.02,
+        mark_settled: bool = True,
+    ) -> Tuple[bool, List[str]]:
+        """3-Way Matching: invoice must match PO commitment and goods receipt."""
+        is_finite, amt_viols = self._validate_invoice_amount_finite(invoice_amount)
+        if not is_finite:
+            return False, amt_viols
+
+        if po_number not in self.purchase_orders:
+            return False, [f"3-WAY MATCH FAIL: PO '{po_number}' not found in approved purchase orders."]
+
+        po = self.purchase_orders[po_number]
+        violations = self._check_po_match_fields(po, to_account, invoice_amount, tolerance_pct)
         is_matched = len(violations) == 0
-        if is_matched:
+        if is_matched and mark_settled:
             po["is_settled"] = True
         return is_matched, violations
 
@@ -287,22 +259,28 @@ class FinancialStateAnchor:
 
         return len(violations) == 0, violations
 
+    def _is_ledger_record_within_window(
+        self, record: Dict[str, Any], now_utc: datetime, window_seconds: float
+    ) -> bool:
+        """Check if a ledger record timestamp falls within the rolling window."""
+        ts_str = record.get("timestamp")
+        if not ts_str:
+            return True
+        try:
+            ts = datetime.fromisoformat(ts_str)
+            return (now_utc - ts).total_seconds() <= window_seconds
+        except Exception:
+            return True
+
     def get_recent_daily_disbursements(self, window_seconds: float = 86400.0) -> float:
         """Calculate cumulative disbursements executed within a rolling 24-hour UTC window."""
         now_utc = datetime.now(timezone.utc)
         daily_executed = 0.0
         for r in self.execution_ledger:
-            if str(r.get("status", "")).startswith("EXECUTED_"):
-                ts_str = r.get("timestamp")
-                if ts_str:
-                    try:
-                        ts = datetime.fromisoformat(ts_str)
-                        if (now_utc - ts).total_seconds() <= window_seconds:
-                            daily_executed += float(r.get("amount", 0.0) or 0.0)
-                    except Exception:
-                        daily_executed += float(r.get("amount", 0.0) or 0.0)
-                else:
-                    daily_executed += float(r.get("amount", 0.0) or 0.0)
+            if not str(r.get("status", "")).startswith("EXECUTED_"):
+                continue
+            if self._is_ledger_record_within_window(r, now_utc, window_seconds):
+                daily_executed += float(r.get("amount", 0.0) or 0.0)
         return daily_executed
 
     def record_disbursement(
@@ -314,6 +292,8 @@ class FinancialStateAnchor:
         reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Append an immutable transaction record to the state anchor ledger."""
+        if not (isinstance(amount, (int, float)) and not isinstance(amount, bool) and math.isfinite(amount) and amount > 0):
+            raise ValueError(f"Disbursement amount must be a positive finite number, got {amount}")
         payee_entry = self.verified_payees.get(
             to_account,
             PayeeAccount("UNKNOWN", "Unverified Recipient", to_account, "", "", is_verified=False),

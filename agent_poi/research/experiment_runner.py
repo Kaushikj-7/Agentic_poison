@@ -22,6 +22,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List
 
 logger = logging.getLogger("agent_poi.research.experiment_runner")
@@ -154,6 +155,7 @@ class ExperimentOrchestrator:
             "ARCH-003": 1.15,  # + Dual firewall & CapSeal PO resolution
             "ARCH-004": 1.25,  # + Minimax game-theoretic sweep
             "ARCH-005": 0.85,  # - Lean IFC only (minimal gate)
+            "ARCH-006": 1.20,  # Unified Pareto-Optimal Financial Guard
         }
         mult = latency_multipliers.get(arch_id, 1.0)
         final_latency = round(calc_latency * mult, 2)

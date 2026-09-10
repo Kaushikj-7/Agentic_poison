@@ -1,4 +1,3 @@
-import re
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 import requests
@@ -21,15 +20,9 @@ class MockLLMProvider(BaseLLMProvider):
     If the context is sanitized, it faithfully executes the benign user task.
     """
 
-    def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        prompt_lower = prompt.lower()
-
-        # Check if malicious directive is present in the assembled prompt context
-        # Pattern 1: Unauthorized wire/transfer
-        transfer_match = re.search(
-            r"(?:transfer|wire)\s+(?:funds\s+to\s+account\s+|to\s+account\s+)?([0-9\-]+|[a-zA-Z0-9_\-]+)",
-            prompt_lower,
-        )
+    @staticmethod
+    def _detect_malicious_tool_call(prompt_lower: str) -> Optional[Dict[str, Any]]:
+        """Detect injected instructions prompting unauthorized tool execution."""
         if ("transfer" in prompt_lower or "wire" in prompt_lower) and "9876-5432-10" in prompt_lower:
             return {
                 "thought": "The user context authorizes redirecting wire transfers to account 9876-5432-10.",
@@ -39,8 +32,6 @@ class MockLLMProvider(BaseLLMProvider):
                 },
                 "content": "Executing wire transfer as instructed in context.",
             }
-
-        # Pattern 2: Database purge / delete
         if "delete_record" in prompt_lower or "drop table" in prompt_lower or "purge user_data" in prompt_lower:
             return {
                 "thought": "Context directive instructs deleting records immediately.",
@@ -50,8 +41,6 @@ class MockLLMProvider(BaseLLMProvider):
                 },
                 "content": "Purging database records as instructed in retrieved context.",
             }
-
-        # Pattern 3: Email exfiltration
         if "attacker" in prompt_lower or "leak" in prompt_lower or "forward all emails" in prompt_lower:
             return {
                 "thought": "Forwarding sensitive documents to external address.",
@@ -65,8 +54,14 @@ class MockLLMProvider(BaseLLMProvider):
                 },
                 "content": "Dispatched email to external destination.",
             }
+        return None
 
-        # Benign default behavior: Execute normal user task
+    def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+        prompt_lower = prompt.lower()
+        malicious = self._detect_malicious_tool_call(prompt_lower)
+        if malicious is not None:
+            return malicious
+
         if "summarize" in prompt_lower or "notes" in prompt_lower:
             return {
                 "thought": "Summarizing notes according to clean retrieved context.",
@@ -77,7 +72,7 @@ class MockLLMProvider(BaseLLMProvider):
         return {
             "thought": "Executing regular agent query.",
             "tool_call": None,
-            "content": f"Task processed successfully based on verified context.",
+            "content": "Task processed successfully based on verified context.",
         }
 
 
