@@ -20,6 +20,10 @@ output/
 scratch/
 .system_generated/
 .gemini/
+# Local audit campaign artifacts (audit-benchmark-spec §3)
+local_audit/
+audit-benchmark-spec.md
+run.bat
 # Developer reference ledgers & methodology
 docs/SURVEY_AND_PAPERS.md
 docs/RESEARCH_NOVELTY_LEDGER.md

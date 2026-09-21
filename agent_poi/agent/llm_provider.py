@@ -1,5 +1,6 @@
+import os
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import requests
 
 
@@ -114,3 +115,81 @@ class OllamaProvider(BaseLLMProvider):
             }
         except Exception as e:
             return self.fallback.generate(prompt, system_prompt)
+
+
+class OpenRouterProvider(BaseLLMProvider):
+    """OpenRouter API client supporting free models (NVIDIA Nemotron, Llama 3.3).
+
+    Integrates external foundation model reasoning while enforcing:
+    - Zero hardcoded secrets: reads OPENROUTER_API_KEY from environment or .env.
+    - Model fallback cascade for free rate-limited tiers.
+    - Offline fallback: falls back to MockLLMProvider when offline or unconfigured.
+    """
+
+    OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+    DEFAULT_FREE_MODELS = [
+        "nvidia/llama-3.1-nemotron-70b-instruct:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+    ]
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: int = 30,
+    ):
+        self.api_key = api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY", "")
+        self.model = model or os.environ.get("OPENROUTER_MODEL", self.DEFAULT_FREE_MODELS[0])
+        self.timeout = timeout
+        self.fallback = MockLLMProvider()
+
+    def is_available(self) -> bool:
+        """Check if OpenRouter credentials are configured."""
+        return bool(self.api_key and self.api_key.startswith("sk-or-"))
+
+    def _build_payload(self, model: str, prompt: str, system_prompt: Optional[str]) -> Dict[str, Any]:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        return {"model": model, "messages": messages, "temperature": 0.1}
+
+    def _query_model(self, model: str, prompt: str, system_prompt: Optional[str]) -> Optional[Dict[str, Any]]:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/Kaushikj-7/Agentic_poison",
+            "X-Title": "AgentPOI Financial Guard Evaluation",
+        }
+        payload = self._build_payload(model, prompt, system_prompt)
+        resp = requests.post(self.OPENROUTER_URL, headers=headers, json=payload, timeout=self.timeout)
+        if resp.status_code == 200:
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices:
+                content = choices[0].get("message", {}).get("content", "")
+                tokens = data.get("usage", {}).get("total_tokens", 0)
+                return {
+                    "thought": f"Generated via OpenRouter ({model})",
+                    "tool_call": None,
+                    "content": content,
+                    "tokens": tokens,
+                    "model_used": model,
+                }
+        return None
+
+    def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+        if not self.is_available():
+            return self.fallback.generate(prompt, system_prompt)
+
+        candidates = [self.model] + [m for m in self.DEFAULT_FREE_MODELS if m != self.model]
+        for candidate in candidates:
+            try:
+                res = self._query_model(candidate, prompt, system_prompt)
+                if res is not None:
+                    return res
+            except Exception:
+                continue
+
+        return self.fallback.generate(prompt, system_prompt)
