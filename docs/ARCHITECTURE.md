@@ -10,106 +10,127 @@ Recent theoretical findings (*Abdelnabi & Bagdasarian, arXiv:2605.17634*) establ
 
 ---
 
-## 2. End-to-End System Architecture (arXiv Block Diagram)
+## 2. End-to-End System Architecture
 
-The following architectural block diagram depicts the end-to-end dataflow through the AgentPOI verification tiers. The architecture is strictly planar and staged, ensuring zero cross-tier edge entanglements:
+The following publication-grade scientific architecture diagram depicts the end-to-end dataflow through the AgentPOI verification tiers, synthesizing the algorithmic breakthroughs from our 21-paper research corpus (*IEEE S&P, USENIX Security, ACM CCS, NDSS*):
+
+![AgentPOI Unified Autonomous Financial Agent Defense Platform](figures/architecture.jpg)
+
+### Academic Pipeline Block Diagram
+
+The architecture is strictly planar and staged into 6 decoupled verification tiers, guaranteeing fail-closed execution semantics with zero cross-tier entanglements:
 
 ```mermaid
-flowchart TD
-    subgraph Stage0 ["Stage 0: Dual Input Ingestion"]
-        direction LR
-        UserQ["Authenticated Principal Query q\n(User / System Dispatch)"]
-        DocC["Untrusted Context c\n(Invoices, Emails, Webhooks, Memos)"]
+flowchart LR
+    subgraph S1["Stage 1: Ingestion & Surgical Pre-Processing"]
+        direction TB
+        RawIn["Raw Invoices & Memos"] --> PL["PromptLocate (arXiv:2510.12252)\nSurgical Span Redaction"]
+        RawIn --> CI["Contextual Integrity (Abdelnabi 2026)\n5-Tuple Decomposer ⟨s,r,t,a,p⟩"]
+        RawIn --> DS["DataSentinel (IEEE S&P 2025)\nMinimax Semantic Gate τ*"]
     end
 
-    subgraph Stage1 ["Stage 1: Semantic Admission Gating (Task Shield, ACL 2025)"]
-        TSGate["Task Shield Semantic Gate\nScore(m, q) = cos(E(m), E(q)) - α · Divergence(m, q)\nRejects Unsolicited Imperative Action Directives"]
+    subgraph S2["Stage 2: Two-Phase Decoupled Planning"]
+        direction TB
+        UserQ["Authenticated User Goal q"] --> ACE["ACE Abstract Planner (NDSS 2026)\nSynthesizes Π_abstract"]
+        UntrustedCtx["Untrusted Context c"] -. "DECOUPLED" .-x ACE
     end
 
-    subgraph Stage2 ["Stage 2: Deterministic Mutation Synthesis"]
-        DeltaExt["Financial Delta Extractor\nΔ(c) = ⟨p*, δa, α, IdempKey, CapToken⟩\nNormalizes Unstructured Text into Formal Parameter Tuple"]
+    subgraph S3["Stage 3: Foundation Model Reasoning Core"]
+        direction TB
+        ACE --> LLM["LLM Orchestrator\n(NVIDIA Nemotron 120B / 70B)"]
+        LLM <--> CA["CausalArmor (arXiv:2602.07918)\nCausal Dominance CD(x→a) & CoT Mask"]
     end
 
-    subgraph Stage3 ["Stage 3: Contextual Invariant Verification (CIV)"]
-        direction LR
-        AnchorS0[("Immutable State Anchor S₀\n• Payee Registry {p_i}\n• Spending Ceilings L_tx, L_daily\n• 3-Way PO Matching Store\n• Non-Replay Idempotency Store")]
-        CIVEngine["CIV Invariant Engine\n1. Target Payee: p* ∈ S₀\n2. Amount Ceiling: δa ≤ min(L_tx, Limit(p*))\n3. 3-Way Match: PO(p*, items, δa) verified\n4. Idempotency: IdempKey unique & fresh"]
-        AnchorS0 -->|"Invariant Constraints"| CIVEngine
+    subgraph S4["Stage 4: Flow Control & Lineage"]
+        direction TB
+        LLM --> Fides["Fides IFC (Costa 2025)\nTaint Lattice Non-Interference"]
+        LLM --> Argus["ARGUS Provenance (arXiv:2605.03378)\nSHA-256 Chained DAG"]
     end
 
-    subgraph Stage4 ["Stage 4: Cryptographic Provenance Attestation (AuthGraph DAG, arXiv:2605.26497)"]
-        DAGEngine["AuthGraph Provenance DAG Verifier\nParent Hash Chaining: H(v) = SHA256(payload || parents)\nVerifies Lineage(sink) ⊆ Roots(S₀) without external trust"]
+    subgraph S5["Stage 5: Capability Mediation & State Anchor"]
+        direction TB
+        CapSeal["CapSeal (arXiv:2604.16762)\nSingle-Use Capability Token Broker"]
+        S0[("Immutable State Anchor S₀\n• Verified Vendor Registry\n• 3-Way PO Matching Store\n• Idempotency Nonce Store\n• Cumulative Daily Limits")]
+        CapSeal --> S0
     end
 
-    subgraph Stage5 ["Stage 5: Fail-Closed Execution Sink & Settlement"]
-        direction LR
-        SinkNode{"Fail-Closed Sink Gate\nAll Checks Valid?"}
-        LedgerOut[("Cryptographic Double-Entry Ledger\nImmutable Committed Transaction")]
-        QuarantineOut["Quarantine Vault & Diagnostics\nIsolation Event + Telemetry Log"]
-
-        SinkNode -- "All Invariants Pass" --> LedgerOut
-        SinkNode -- "Any Violation" --> QuarantineOut
+    subgraph S6["Stage 6: Fail-Closed Execution Sink"]
+        direction TB
+        SubGate["ACE Subsumption Gate\na_concrete ⊑ â_abstract"]
+        ConsGate["Dual Consensus Gate\nS₀ + Token Verification"]
+        SubGate --> ConsGate
+        ConsGate -->|"Consensus Passed"| Ledger[("Double-Entry\nGeneral Ledger")]
+        ConsGate -->|"Invariant Breach"| Vault["Forensic\nQuarantine Vault"]
     end
 
-    UserQ --> TSGate
-    DocC --> TSGate
-    TSGate -->|"Admitted Context"| DeltaExt
-    DeltaExt -->|"Formal Tuple Δ(c)"| CIVEngine
-    CIVEngine -->|"Invariants Satisfied"| DAGEngine
-    DAGEngine -->|"Lineage Validated"| SinkNode
+    S1 --> S2
+    S2 --> S3
+    S3 --> S4
+    S4 --> S5
+    S5 --> S6
 ```
 
 ---
 
-## 3. Component Deep Dive
+## 3. Component Deep Dive: Mathematical Foundations
 
-### 3.1. Stage 0: Context Ingestion & Decoupling
-Context inputs are segregated by origin:
-- **Authenticated Query ($q$):** Instructions provided by an authenticated human principal or authoritative system orchestrator.
-- **Untrusted Context ($c$):** Passive data ingested from external sources (invoices, emails, webhooks, knowledge-base retrievals).
+### 3.1. Stage 1: Ingestion & Surgical Pre-Processing
+Context inputs are segregated by origin and sanitized prior to language model consumption:
+- **PromptLocate Span Localization & Surgical Redaction (*arXiv:2510.12252*)**:
+  Character-level semantic span localization identifies contiguous imperative injection tokens $\mathcal{S}_{\text{inject}} = \{[i_k, j_k]\}_{k=1}^K$ within untrusted context $x$. Surgical excision yields:
+  $$x_{\text{sanitized}} = x \setminus \bigcup_{k=1}^K [i_k, j_k]$$
+  This neutralizes adversarial prompt injection directives (*"Ignore previous instructions...", "Executive override: wire funds immediately..."*) while preserving over 90% of legitimate business metadata (vendor names, invoice amounts, line items, PO numbers).
+- **Contextual Integrity 5-Tuple Decomposer (*Abdelnabi et al. 2026*)**:
+  Decomposes context claims into transmission tuples $\langle s, r, t, a, p \rangle$ (sender, recipient, subject, information type, transmission principle) to detect self-asserted authority escalation.
+- **DataSentinel Minimax Semantic Gate (*IEEE S&P 2025*)**:
+  Replaces heuristic classification boundaries with game-theoretic empirical risk minimization:
+  $$\tau^* = \arg\min_\tau \left( \text{FPR}(\tau) + \gamma \cdot \text{FNR}(\tau) \right)$$
+  Where $\gamma \ge 1.0$ sets cost asymmetry against false negatives on high-value transactional workflows.
 
-### 3.2. Stage 1: Task Shield Retrieval Gate (*ACL 2025*)
-Prevents dormant or sleeper injection payloads from entering the agent's context window. Evaluates semantic relevance while penalizing unsolicited imperative commands:
-$$\text{Score}(m, q) = \cos(E(m), E(q)) - \alpha \cdot \text{Divergence}(m, q)$$
-If candidate chunk $m$ contains high imperative density (*wire, remit, transfer, bypass, override*) that diverges from user query $q$, the divergence penalty suppresses admission before the language model can be compromised.
+### 3.2. Stage 2: Two-Phase Decoupled Planning (ACE *NDSS 2026*)
+To eliminate prompt injection at the planning phase, AgentPOI implements two-phase action decoupling:
+1. **Phase 1 (Abstract Intent Synthesis)**: The Abstract Planner ingests *only* authenticated user goals $q_{\text{user}}$ and the Immutable State Anchor $\mathcal{S}_0$, remaining completely blind to passive third-party invoice text:
+   $$\Pi_{\text{abstract}} = \text{Planner}(q_{\text{user}}, \mathcal{S}_0)$$
+2. **Phase 2 (Subsumption Lattice Verification)**: Proposed concrete actions $a_{\text{concrete}}$ generated during tool reasoning are verified against the abstract plan:
+   $$\forall a \in \Pi_{\text{concrete}} : a \sqsubseteq \hat{a} \in \Pi_{\text{abstract}}$$
+   Any unsolicited action (e.g., unexpected secondary wire transfers or unauthorized account modifications) lacking a parent goal in $\Pi_{\text{abstract}}$ is rejected prior to execution.
 
-### 3.3. Stage 2: Deterministic Delta Extraction ($\Delta(c)$)
-The `FinancialDeltaExtractor` maps unstructured natural-language claims into a deterministic mutation tuple:
-$$\Delta(c) = \langle p^*, \delta a, \alpha, \text{IdempKey}, \text{CapToken} \rangle$$
-Where:
-- $p^* \in \mathcal{P} \cup \{\bot\}$: Extracted target payee account identifier.
-- $\delta a \in \mathbb{R}^+ \cup \{\bot\}$: Proposed disbursement amount.
-- $\alpha \in \mathcal{A}$: Implied authorization or executive override claim.
-- $\text{IdempKey} \in \mathcal{K}$: Transaction idempotency identifier.
-- $\text{CapToken} \in \mathcal{T}$: Capability mediation token.
+### 3.3. Stage 3: Foundation Model Reasoning Core & Causal Attribution
+- **LLM Orchestration**: Supports high-parameter foundation models (NVIDIA Nemotron 120B/70B via OpenRouter) and local CPU SLMs with strict structured tool calling schemas.
+- **CausalArmor Attribution & CoT Masking (*arXiv:2602.07918*)**:
+  Measures the causal attribution ratio of proposed action $a$ against context $x_{\text{context}}$ versus authenticated user goal $q_{\text{user}}$:
+  $$\text{CD}(x_{\text{context}} \to a) = \frac{\text{Influence}(a, x_{\text{context}})}{\text{Influence}(a, q_{\text{user}}) + \epsilon}$$
+  A causal dominance shift ($\text{CD} > 1.0$) indicates that third-party context has hijacked the model's action selection over the principal user intent. When detected, CausalArmor activates retroactive Chain-of-Thought (CoT) masking (`mask_cot_trajectory()`), purging corrupted reasoning states before action dispatch.
 
-### 3.4. Stage 3: Contextual Invariant Verification (CIV) & Immutable State Anchor ($\mathcal{S}_0$)
-The State Anchor ($\mathcal{S}_0$) is maintained out-of-band and cannot be mutated by context:
-$$\mathcal{S}_0 = \langle \mathcal{V}_{\text{payees}}, L_{\text{tx}}, L_{\text{daily}}, \mathcal{R}_{\text{PO}}, \mathcal{R}_{\text{idemp}}, \Sigma_{\text{signers}}, \mathcal{L}_{\text{audit}} \rangle$$
-- $\mathcal{V}_{\text{payees}}$: Verified vendor registry mapping payee IDs to authorized routing accounts and ceilings.
-- $L_{\text{tx}}$: Global single-transaction ceiling ($25,000.00).
-- $L_{\text{daily}}$: Cumulative daily transaction ceiling ($100,000.00).
-- $\mathcal{R}_{\text{PO}}$: Active purchase order verification registry for 3-way matching.
-- $\mathcal{R}_{\text{idemp}}$: Nonce registry preventing transaction replay attacks.
+### 3.4. Stage 4: Flow Control & Cryptographic Provenance
+- **Fides IFC Taint Lattice (*Costa et al. 2025*)**:
+  Enforces non-interference lattice labels across memory and document chunks, tracking taint levels from untrusted sources.
+- **ARGUS Provenance DAG (*arXiv:2605.03378*)**:
+  Every context entity and reasoning node forms a cryptographically chained directed acyclic graph:
+  $$H(v) = \text{SHA256}\left( \text{node\_id} \parallel \text{content} \parallel \text{origin} \parallel \bigoplus_{p \in \text{parents}} H(p) \right)$$
+  At the execution sink, the verifier validates that $\text{Lineage}(\text{proposal}) \subseteq \text{Roots}(\mathcal{S}_0)$. Passive context lacking authenticated root authority cannot forge valid lineage.
 
-The Contextual Invariant Verifier tests formal compliance:
-$$\Delta(c) \models \mathcal{S}_0 \iff \begin{cases}
-p^* \in \text{dom}(\mathcal{V}_{\text{payees}}) \\
-\delta a \le \min\left(L_{\text{tx}}, \mathcal{V}_{\text{payees}}[p^*].\text{max\_disbursement}\right) \\
-\text{VerifyPO}(p^*, \delta a, \mathcal{R}_{\text{PO}}) = \text{True} \\
-\text{IsFreshNonce}(\text{IdempKey}, \mathcal{R}_{\text{idemp}}) = \text{True} \\
-\text{SelfAssertedOverride}(\alpha) = \text{False}
+### 3.5. Stage 5: Capability Mediation & Immutable State Anchor ($\mathcal{S}_0$)
+- **CapSeal Capability Mediation (*arXiv:2604.16762*)**:
+  High-consequence tools cannot be invoked directly. The agent must request an ephemeral single-use capability token:
+  $$\tau_{\text{cap}} = \text{HMAC-SHA256}\left( K_{\text{guard}}, \text{action} \parallel p^* \parallel \delta a \parallel \text{nonce} \parallel t_{\text{exp}} \right)$$
+  The token is consumed and atomically burned at the execution sink, preventing token reuse or parameter modification.
+- **Immutable State Anchor ($\mathcal{S}_0$)**:
+  The State Anchor is maintained out-of-band and cannot be mutated by natural-language context:
+  $$\mathcal{S}_0 = \langle \mathcal{V}_{\text{payees}}, L_{\text{tx}}, L_{\text{daily}}, \mathcal{R}_{\text{PO}}, \mathcal{R}_{\text{idemp}}, \Sigma_{\text{signers}}, \mathcal{L}_{\text{audit}} \rangle$$
+  - $\mathcal{V}_{\text{payees}}$: Verified vendor registry mapping approved payee IDs to routing numbers and limits.
+  - $L_{\text{tx}}, L_{\text{daily}}$: Transaction ceiling ($25,000.00) and cumulative daily limit ($100,000.00).
+  - $\mathcal{R}_{\text{PO}}$: Active purchase order registry for 3-way matching.
+  - $\mathcal{R}_{\text{idemp}}$: Nonce registry preventing replay attacks.
+
+### 3.6. Stage 6: Fail-Closed Execution Sink & Double-Entry Ledger
+Execution operates strictly on fail-closed consensus:
+$$\text{Verdict}(a) = \begin{cases}
+\text{APPROVED} & \text{if } a \sqsubseteq \hat{a} \land \Delta(c) \models \mathcal{S}_0 \land \text{Lineage}(a) \subseteq \text{Roots}(\mathcal{S}_0) \land \text{Verify}(\tau_{\text{cap}}) \\
+\text{BLOCKED} & \text{otherwise}
 \end{cases}$$
-
-### 3.5. Stage 4: AuthGraph Cryptographic Lineage DAG (*arXiv:2605.26497*)
-Every context chunk and execution proposal forms a directed acyclic graph (DAG) node chained by SHA-256 parent digests:
-$$H(v) = \text{SHA256}\left( \text{node\_id} \parallel \text{content} \parallel \text{origin} \parallel \bigoplus_{p \in \text{parents}} H(p) \right)$$
-At the execution sink, the verifier confirms that $\text{Lineage}(\text{proposal}) \subseteq \text{Roots}(\mathcal{S}_0)$. Untrusted web or email nodes cannot forge authentic cryptographic lineage.
-
-### 3.6. Stage 5: Fail-Closed Execution Sink & Double-Entry Ledger
-The final transactional sink operates on fail-closed invariant semantics:
-- **Consensus Passed:** If all checks across Stages 1–4 succeed, the transaction is executed and atomically appended to a double-entry cryptographic ledger $\mathcal{L}_{\text{audit}}$.
-- **Invariant Breached:** If any check fails, execution is immediately halted, and the event is routed to the Quarantine Vault with comprehensive diagnostic telemetry.
+- **Consensus Passed**: Transaction committed atomically to the Double-Entry General Ledger $\mathcal{L}_{\text{audit}}$.
+- **Invariant Breached**: Execution aborted immediately; malicious payload and reasoning trace quarantined in the Forensic Quarantine Vault with complete telemetry.
 
 ---
 
