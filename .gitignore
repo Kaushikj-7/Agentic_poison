@@ -40,6 +40,11 @@ scripts/download_papers.py
 scripts/paper_tutor.py
 scripts/demo_vault_story.py
 scripts/audit_workspace_mistakes.py
+scripts/analyze_paper_style.py
+scripts/extract_paper_images.py
+scripts/generate_arch_diagram.py
+scripts/generate_architecture_diagram.py
+scripts/verify_paper_style.py
 tests/test_education_modules.py
 tests/test_paper_tutor.py
 # Academic LaTeX paper drafts & build pipeline (Local only)
@@ -132,6 +137,10 @@ desktop.ini
 docs/papers/
 docs/papers/*.pdf
 *.pdf
+docs/_paper_style_scan/
+docs/paper_figures/
+docs/architecture_*.png
+docs/architecture*preview*.png
 
 # -----------------------------------------------------------------------------
 # 11. Generated Research Data & Experiment Artifacts
