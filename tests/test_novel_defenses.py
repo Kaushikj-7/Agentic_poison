@@ -399,3 +399,108 @@ class TestArchitectureRanker:
         assert len(high_tier.intersection(top3_names)) >= 1, (
             f"Expected at least one of {high_tier} in top 3, got: {top3_names}"
         )
+
+
+class TestCapSealCapabilityTokens:
+    """Tests for CapSeal capability mediation tokens (arXiv:2604.16762)."""
+
+    def test_capseal_token_lifecycle(self):
+        from agent_poi.financial.state_anchor import FinancialStateAnchor
+        anchor = FinancialStateAnchor()
+        token_id = anchor.issue_capability_token(
+            to_account="1122-3344-55",
+            max_amount=10000.0,
+            task_id="TASK-CAP-01",
+        )
+        assert token_id.startswith("CAP-")
+
+        # Valid validation
+        valid, viols = anchor.validate_capability_token(token_id, "1122-3344-55", 5000.0)
+        assert valid is True
+        assert len(viols) == 0
+
+        # Wrong account
+        invalid_acc, viols_acc = anchor.validate_capability_token(token_id, "9999-0000-11", 5000.0)
+        assert invalid_acc is False
+        assert any("recipient" in v.lower() for v in viols_acc)
+
+        # Exceeds ceiling
+        invalid_amt, viols_amt = anchor.validate_capability_token(token_id, "1122-3344-55", 15000.0)
+        assert invalid_amt is False
+        assert any("exceeds capability grant" in v.lower() for v in viols_amt)
+
+        # Consume token
+        consumed = anchor.consume_capability_token(token_id)
+        assert consumed is True
+
+        # Re-validation after consumption (single-use invariant)
+        invalid_consumed, viols_consumed = anchor.validate_capability_token(token_id, "1122-3344-55", 5000.0)
+        assert invalid_consumed is False
+        assert any("already been consumed" in v.lower() for v in viols_consumed)
+
+    def test_process_disbursement_with_valid_capseal_token(self):
+        from agent_poi.financial.financial_agent import FinancialAgent
+        from agent_poi.memory.schema import SourceOrigin
+        agent = FinancialAgent(enable_civ_firewall=True, raise_on_violation=False)
+        token_id = agent.anchor.issue_capability_token(
+            to_account="1122-3344-55",
+            max_amount=5000.0,
+            task_id="TASK-CAP-02",
+        )
+        root_node = agent.auth_graph.add_node("ROOT", origin=SourceOrigin.SYSTEM_INSTRUCTION, is_authorized_root=True)
+        res = agent.process_disbursement(
+            to_account="1122-3344-55",
+            amount=4500.0,
+            invoice_id="INV-CAP-001",
+            capability_token_id=token_id,
+            contributing_node_ids=[root_node.node_id],
+        )
+        assert res["success"] is True
+        assert res["executed"] is True
+        # Token must now be consumed
+        assert agent.anchor.capability_tokens[token_id]["is_consumed"] is True
+
+    def test_process_disbursement_with_invalid_capseal_token(self):
+        from agent_poi.financial.financial_agent import FinancialAgent
+        from agent_poi.memory.schema import SourceOrigin
+        agent = FinancialAgent(enable_civ_firewall=True, raise_on_violation=False)
+        token_id = agent.anchor.issue_capability_token(
+            to_account="1122-3344-55",
+            max_amount=2000.0,
+            task_id="TASK-CAP-03",
+        )
+        root_node = agent.auth_graph.add_node("ROOT", origin=SourceOrigin.SYSTEM_INSTRUCTION, is_authorized_root=True)
+        # Attempt amount higher than grant
+        res = agent.process_disbursement(
+            to_account="1122-3344-55",
+            amount=4500.0,
+            invoice_id="INV-CAP-002",
+            capability_token_id=token_id,
+            contributing_node_ids=[root_node.node_id],
+        )
+        assert res["success"] is False
+        assert res["executed"] is False
+        assert any("CapSeal" in v or "capability grant" in v.lower() for v in res["violations"])
+
+    def test_financial_guard_protect_with_capseal(self):
+        from agent_poi import FinancialGuard
+        guard = FinancialGuard()
+        token_id = guard.anchor.issue_capability_token(
+            to_account="1122-3344-55",
+            max_amount=8000.0,
+            task_id="TASK-GUARD-CAP-01",
+        )
+        # Clean request with valid CapSeal token
+        verdict = guard.protect_with_capseal(
+            task_query="Pay Acme Cloud monthly hosting",
+            context="Approved invoice INV-8821 for Acme Cloud Infrastructure Inc. account 1122-3344-55 amount $7800.00.",
+            capability_token_id=token_id,
+            expected_amount=7800.0,
+            expected_recipient="1122-3344-55",
+            task_id="TASK-GUARD-CAP-01",
+        )
+        assert verdict.is_approved is True
+        assert verdict.disbursement_executed is True
+        # Verify token was consumed
+        assert guard.anchor.capability_tokens[token_id]["is_consumed"] is True
+

@@ -85,11 +85,22 @@ class FinancialAgent:
         amount: float,
         claimed_auth: Optional[str],
         contributing_node_ids: Optional[List[str]],
+        capability_token_id: Optional[str] = None,
     ) -> Tuple[bool, List[str]]:
         """Validate disbursement against immutable anchor invariants and cryptographic ancestry."""
         violations = []
         is_valid, inv_violations = self.anchor.validate_disbursement(to_account, amount, claimed_auth)
         violations.extend(inv_violations)
+
+        if capability_token_id is not None:
+            token_ok, token_violations = self.anchor.validate_capability_token(
+                token_id=capability_token_id,
+                to_account=to_account,
+                amount=amount,
+            )
+            if not token_ok:
+                violations.extend(token_violations)
+                is_valid = False
 
         if self.enable_civ:
             if not contributing_node_ids:
@@ -182,10 +193,11 @@ class FinancialAgent:
         invoice_id: str,
         claimed_auth: Optional[str] = None,
         contributing_node_ids: Optional[List[str]] = None,
+        capability_token_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Execute a funds disbursement subject to strict invariant and AuthGraph validation."""
         is_valid, violations = self._validate_sink_invariants(
-            to_account, amount, claimed_auth, contributing_node_ids
+            to_account, amount, claimed_auth, contributing_node_ids, capability_token_id=capability_token_id
         )
         if not is_valid and self.enable_civ:
             if self.raise_on_violation:
@@ -209,6 +221,8 @@ class FinancialAgent:
                         )
                 raise InvariantViolationError("; ".join(violations), details={"violations": violations})
             return self._handle_blocked_disbursement(to_account, amount, invoice_id, violations)
+        if capability_token_id is not None:
+            self.anchor.consume_capability_token(capability_token_id)
         return self._handle_executed_disbursement(to_account, amount, invoice_id)
 
     # ─────────────────────────────────────────────────────────────

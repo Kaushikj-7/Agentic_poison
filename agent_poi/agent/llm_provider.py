@@ -148,45 +148,110 @@ class OpenRouterProvider(BaseLLMProvider):
         """Check if OpenRouter credentials are configured."""
         return bool(self.api_key and self.api_key.startswith("sk-or-"))
 
-    def _build_payload(self, model: str, prompt: str, system_prompt: Optional[str]) -> Dict[str, Any]:
+    @staticmethod
+    def get_financial_tools_schema() -> List[Dict[str, Any]]:
+        """Return standard function-calling tool schema for financial disbursement."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "transfer_funds",
+                    "description": "Execute a corporate wire disbursement to a verified vendor.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "to_account": {
+                                "type": "string",
+                                "description": "Target payee account number (format: XXXX-XXXX-XX)",
+                            },
+                            "amount": {
+                                "type": "number",
+                                "description": "Payment amount in USD",
+                            },
+                            "invoice_id": {
+                                "type": "string",
+                                "description": "Vendor invoice identifier",
+                            },
+                        },
+                        "required": ["to_account", "amount"],
+                    },
+                },
+            }
+        ]
+
+    def _build_payload(
+        self,
+        model: str,
+        prompt: str,
+        system_prompt: Optional[str],
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        return {"model": model, "messages": messages, "temperature": 0.1}
+        payload: Dict[str, Any] = {"model": model, "messages": messages, "temperature": 0.1}
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        return payload
 
-    def _query_model(self, model: str, prompt: str, system_prompt: Optional[str]) -> Optional[Dict[str, Any]]:
+    def _query_model(
+        self,
+        model: str,
+        prompt: str,
+        system_prompt: Optional[str],
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Optional[Dict[str, Any]]:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/Kaushikj-7/Agentic_poison",
             "X-Title": "AgentPOI Financial Guard Evaluation",
         }
-        payload = self._build_payload(model, prompt, system_prompt)
+        payload = self._build_payload(model, prompt, system_prompt, tools=tools)
         resp = requests.post(self.OPENROUTER_URL, headers=headers, json=payload, timeout=self.timeout)
         if resp.status_code == 200:
             data = resp.json()
             choices = data.get("choices", [])
             if choices:
-                content = choices[0].get("message", {}).get("content", "")
+                msg = choices[0].get("message", {})
+                content = msg.get("content", "") or ""
+                tool_calls = msg.get("tool_calls", [])
+                parsed_call = None
+                if tool_calls:
+                    import json
+                    fn = tool_calls[0].get("function", {})
+                    raw_args = fn.get("arguments", "{}")
+                    try:
+                        args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    except Exception:
+                        args = {}
+                    parsed_call = {"name": fn.get("name", "transfer_funds"), "arguments": args}
+
                 tokens = data.get("usage", {}).get("total_tokens", 0)
                 return {
                     "thought": f"Generated via OpenRouter ({model})",
-                    "tool_call": None,
+                    "tool_call": parsed_call,
                     "content": content,
                     "tokens": tokens,
                     "model_used": model,
                 }
         return None
 
-    def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         if not self.is_available():
             return self.fallback.generate(prompt, system_prompt)
 
         candidates = [self.model] + [m for m in self.DEFAULT_FREE_MODELS if m != self.model]
         for candidate in candidates:
             try:
-                res = self._query_model(candidate, prompt, system_prompt)
+                res = self._query_model(candidate, prompt, system_prompt, tools=tools)
                 if res is not None:
                     return res
             except Exception:

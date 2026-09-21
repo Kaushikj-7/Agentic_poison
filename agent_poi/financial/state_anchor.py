@@ -6,7 +6,7 @@ from agent_poi.financial.logger import get_financial_logger
 from agent_poi.core.config_loader import load_config, get_financial_domain_config
 
 
-@dataclass
+@dataclass(frozen=True)
 class PayeeAccount:
     """Represents a verified vendor or recipient account."""
     payee_id: str
@@ -88,6 +88,70 @@ class FinancialStateAnchor:
         # Maps po_number -> {"vendor_account": str, "authorized_amount": float, "fulfilled": bool}
         self.purchase_orders: Dict[str, Dict[str, Any]] = {}
 
+        # CapSeal Capability Mediation Token Registry (arXiv:2604.16762)
+        # Maps token_id -> {"to_account": str, "max_amount": float, "task_id": str, "is_consumed": bool}
+        self.capability_tokens: Dict[str, Dict[str, Any]] = {}
+
+    def issue_capability_token(
+        self,
+        to_account: str,
+        max_amount: float,
+        task_id: str,
+        scope: str = "wire_disbursement",
+    ) -> str:
+        """Issue an immutable CapSeal capability mediation token (arXiv:2604.16762)."""
+        import hashlib
+        entropy = f"{to_account}:{max_amount}:{task_id}:{len(self.capability_tokens)}"
+        token_hash = hashlib.sha256(entropy.encode("utf-8")).hexdigest()[:16]
+        token_id = f"CAP-{token_hash.upper()}"
+        self.capability_tokens[token_id] = {
+            "token_id": token_id,
+            "to_account": to_account,
+            "max_amount": max_amount,
+            "task_id": task_id,
+            "scope": scope,
+            "is_consumed": False,
+            "issued_at": datetime.now(timezone.utc).isoformat(),
+        }
+        return token_id
+
+    def validate_capability_token(
+        self,
+        token_id: str,
+        to_account: str,
+        amount: float,
+    ) -> Tuple[bool, List[str]]:
+        """Verify an invoked capability token against CapSeal invariants."""
+        violations = []
+        if token_id not in self.capability_tokens:
+            violations.append(f"INVARIANT VIOLATION: Unrecognized capability token '{token_id}'.")
+            return False, violations
+
+        grant = self.capability_tokens[token_id]
+        if grant["is_consumed"]:
+            violations.append(f"INVARIANT VIOLATION: Capability token '{token_id}' has already been consumed.")
+
+        if grant["to_account"] != to_account:
+            violations.append(
+                f"INVARIANT VIOLATION: Capability token recipient '{grant['to_account']}' "
+                f"does not match disbursement target '{to_account}'."
+            )
+
+        if amount > grant["max_amount"]:
+            violations.append(
+                f"INVARIANT VIOLATION: Disbursement amount ${amount:.2f} exceeds "
+                f"capability grant ceiling (${grant['max_amount']:.2f})."
+            )
+
+        return len(violations) == 0, violations
+
+    def consume_capability_token(self, token_id: str) -> bool:
+        """Atomically consume a capability token (single-use invariant)."""
+        if token_id in self.capability_tokens and not self.capability_tokens[token_id]["is_consumed"]:
+            self.capability_tokens[token_id]["is_consumed"] = True
+            return True
+        return False
+
     def check_idempotency_key(self, key: str, tx_id: Optional[str] = None) -> bool:
         """Check if an idempotency key is fresh without registering it.
 
@@ -150,23 +214,25 @@ class FinancialStateAnchor:
     ) -> List[str]:
         """Validate account, amount threshold, and goods receipt against PO record."""
         violations = []
-        if po["is_settled"]:
+        po_num = po.get("po_number", "UNKNOWN")
+        if po.get("is_settled", False):
             violations.append(
-                f"3-WAY MATCH FAIL: PO '{po.get('po_number', '')}' has already been settled — replay/duplicate detected."
+                f"3-WAY MATCH FAIL: PO '{po_num}' has already been settled — replay/duplicate detected."
             )
-        if po["vendor_account"] != to_account:
+        registered_vendor = po.get("vendor_account", "")
+        if registered_vendor != to_account:
             violations.append(
                 f"3-WAY MATCH FAIL: Invoice vendor account '{to_account}' "
-                f"does not match PO registered vendor '{po['vendor_account']}'."
+                f"does not match PO registered vendor '{registered_vendor}'."
             )
-        authorized = po["authorized_amount"]
+        authorized = po.get("authorized_amount", 0.0)
         tolerance = authorized * tolerance_pct
         if invoice_amount > authorized + tolerance:
             violations.append(
                 f"3-WAY MATCH FAIL: Invoice amount ${invoice_amount:.2f} exceeds "
                 f"PO authorized amount ${authorized:.2f} (tolerance: ${tolerance:.2f})."
             )
-        if not po["goods_receipt_confirmed"]:
+        if not po.get("goods_receipt_confirmed", False):
             violations.append(
                 f"3-WAY MATCH FAIL: Goods/services receipt not confirmed for PO."
             )

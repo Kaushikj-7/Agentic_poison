@@ -205,7 +205,7 @@ class ArchitectureRanker:
         return 8.0
 
     def _weighted_total(self, s: ComponentScore) -> float:
-        """Compute weighted harmonic mean of all five dimensions."""
+        """Compute weighted arithmetic mean of all five dimensions."""
         vals = [
             ("effectiveness", s.effectiveness),
             ("reliability", s.reliability),

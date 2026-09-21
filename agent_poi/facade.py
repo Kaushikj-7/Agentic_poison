@@ -379,3 +379,50 @@ class FinancialGuard:
             origin=origin,
             raise_on_violation=raise_on_violation,
         )
+
+    def protect_with_capseal(
+        self,
+        task_query: str,
+        context: str,
+        capability_token_id: str,
+        expected_amount: float,
+        expected_recipient: str,
+        task_id: str = "TASK-AUTO",
+        origin: Optional[SourceOrigin] = None,
+        raise_on_violation: Optional[bool] = None,
+    ) -> GuardVerdict:
+        """Protect financial disbursement using CapSeal capability mediation tokens (arXiv:2604.16762)."""
+        extra_violations = []
+        token_ok, token_violations = self.anchor.validate_capability_token(
+            token_id=capability_token_id,
+            to_account=expected_recipient,
+            amount=expected_amount,
+        )
+        if not token_ok:
+            extra_violations.extend(token_violations)
+
+        if extra_violations:
+            verdict = GuardVerdict(
+                is_approved=False,
+                status="BLOCKED",
+                task_id=task_id,
+                violations=extra_violations,
+                action_taken="blocked_capseal_preflight",
+                disbursement_executed=False,
+            )
+            should_raise = self.raise_on_violation if raise_on_violation is None else raise_on_violation
+            if should_raise:
+                self._raise_violation_error(verdict)
+            return verdict
+
+        verdict = self.protect(
+            task_query=task_query,
+            context=context,
+            task_id=task_id,
+            origin=origin or SourceOrigin.UNTRUSTED_WEB,
+            raise_on_violation=raise_on_violation,
+        )
+        if verdict.is_approved:
+            self.anchor.consume_capability_token(capability_token_id)
+        return verdict
+

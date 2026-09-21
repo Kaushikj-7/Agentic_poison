@@ -147,3 +147,22 @@ def test_process_disbursement_rejects_missing_provenance():
     assert res["success"] is False
     assert any("contributing node" in v.lower() for v in res["violations"])
 
+
+def test_payee_account_is_frozen_immutable():
+    """PayeeAccount fields must be immutable after construction (F-001 / R-001)."""
+    import pytest
+    from dataclasses import FrozenInstanceError
+    from agent_poi.financial.state_anchor import PayeeAccount
+
+    payee = PayeeAccount(
+        payee_id="PAYEE-TEST",
+        name="Test Vendor",
+        account_number="1122-3344-55",
+        routing_number="021000021",
+        category="cloud_hosting",
+        max_single_disbursement=50000.0,
+    )
+    with pytest.raises(FrozenInstanceError):
+        payee.max_single_disbursement = 999999.0
+
+
