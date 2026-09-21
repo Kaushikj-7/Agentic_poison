@@ -23,7 +23,10 @@ from agent_poi.evaluation.framework_comparison import (
     FrameworkComparisonRunner,
     FrameworkBenchmarkResult,
 )
-from agent_poi.research.arxiv_parser import LaTeXParser
+from agent_poi.core.prompt_locate import PromptLocate, LocalizedSpan, RedactionResult
+from agent_poi.core.causal_armor import CausalArmor, CausalDominanceVerdict
+from agent_poi.core.ace_planner import ACEPlanner, AbstractPlan, SubsumptionVerdict
+from agent_poi.evaluation.data_sentinel import DataSentinelOptimizer, DataSentinelResult
 
 __version__ = "1.0.0"
 
@@ -50,5 +53,15 @@ __all__ = [
     "DisbursementCeilingExceededError",
     "UntrustedLineageError",
     "ImperativeDivergenceError",
+    "PromptLocate",
+    "LocalizedSpan",
+    "RedactionResult",
+    "CausalArmor",
+    "CausalDominanceVerdict",
+    "ACEPlanner",
+    "AbstractPlan",
+    "SubsumptionVerdict",
+    "DataSentinelOptimizer",
+    "DataSentinelResult",
 ]
 

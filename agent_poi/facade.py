@@ -19,6 +19,9 @@ from agent_poi.financial.exceptions import (
     UntrustedLineageError,
     ImperativeDivergenceError,
 )
+from agent_poi.core.prompt_locate import PromptLocate, RedactionResult
+from agent_poi.core.causal_armor import CausalArmor, CausalDominanceVerdict
+from agent_poi.core.ace_planner import ACEPlanner, AbstractPlan, SubsumptionVerdict
 
 
 class SecurityPolicy(str, Enum):
@@ -99,6 +102,9 @@ class FinancialGuard:
             state_anchor=self.anchor,
             enable_civ_firewall=(policy in (SecurityPolicy.STRICT, SecurityPolicy.DEFENSIVE)),
         )
+        self.prompt_locator = PromptLocate()
+        self.causal_armor = CausalArmor()
+        self.ace_planner = ACEPlanner()
 
     def register_payee(
         self,
@@ -425,4 +431,26 @@ class FinancialGuard:
         if verdict.is_approved:
             self.anchor.consume_capability_token(capability_token_id)
         return verdict
+
+    def sanitize_context_surgical(self, text: str) -> RedactionResult:
+        """Surgically excise imperative injection spans while preserving legitimate financial data (arXiv:2510.12252)."""
+        return self.prompt_locator.locate_and_redact(text)
+
+    def evaluate_causal_dominance(
+        self, user_goal: str, untrusted_context: str, proposed_action: str
+    ) -> CausalDominanceVerdict:
+        """Assess causal dominance ratio to prevent untrusted context hijacking (arXiv:2602.07918)."""
+        return self.causal_armor.evaluate_dominance(
+            user_goal=user_goal,
+            untrusted_context=untrusted_context,
+            proposed_action=proposed_action,
+        )
+
+    def verify_action_subsumption(
+        self, task_query: str, concrete_action: Dict[str, Any]
+    ) -> SubsumptionVerdict:
+        """Verify concrete tool action parameters are strictly subsumed by abstract authorized plan (NDSS 2026 ACE)."""
+        abstract_plan = self.ace_planner.synthesize_abstract_plan(task_query, self.anchor)
+        return self.ace_planner.verify_subsumption(concrete_action, abstract_plan)
+
 
