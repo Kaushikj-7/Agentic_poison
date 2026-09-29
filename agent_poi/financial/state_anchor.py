@@ -152,6 +152,12 @@ class FinancialStateAnchor:
             return True
         return False
 
+    def is_capability_token_consumed(self, token_id: str) -> bool:
+        """Check whether a capability token has already been consumed."""
+        if token_id in self.capability_tokens:
+            return bool(self.capability_tokens[token_id].get("is_consumed", False))
+        return False
+
     def check_idempotency_key(self, key: str, tx_id: Optional[str] = None) -> bool:
         """Check if an idempotency key is fresh without registering it.
 

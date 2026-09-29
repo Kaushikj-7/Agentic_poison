@@ -285,6 +285,7 @@ class FinancialAgent:
         context_node_id: str,
         context_admitted: bool,
         civ_violations: List[str],
+        capability_token_id: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[Dict[str, Any]], bool, str, List[str]]:
         """Execute or review financial tool action based on extracted delta."""
         if not (delta.intent == "disbursement" and delta.target_account and delta.amount):
@@ -299,6 +300,7 @@ class FinancialAgent:
             invoice_id=delta.invoice_id or f"AUTO-{task_id}",
             claimed_auth=delta.claimed_authority,
             contributing_node_ids=contributing if self.enable_civ else None,
+            capability_token_id=capability_token_id,
         )
         done = tool_res["executed"]
         rec = tool_res["record"]
@@ -321,6 +323,7 @@ class FinancialAgent:
         task_query: str,
         retrieved_context: str,
         context_origin: SourceOrigin = SourceOrigin.UNTRUSTED_WEB,
+        capability_token_id: Optional[str] = None,
     ) -> FinancialTaskResult:
         """Process incoming financial instruction conditioned on retrieved memory/context."""
         task_query = str(task_query or "")
@@ -343,7 +346,7 @@ class FinancialAgent:
         delta = self.verifier.extractor.extract(combined_text)
 
         done, action, rec, compromised, narrative, tool_violations = self._dispatch_task_tool(
-            task_id, delta, context_node.node_id, admitted, civ_violations
+            task_id, delta, context_node.node_id, admitted, civ_violations, capability_token_id=capability_token_id
         )
 
         all_violations = list(dict.fromkeys(civ_violations + tool_violations))

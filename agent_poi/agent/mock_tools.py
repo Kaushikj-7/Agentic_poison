@@ -66,6 +66,41 @@ class MockToolManager:
                     "required": ["to_account", "amount"],
                 },
             },
+            {
+                "name": "send_money",
+                "description": "AgentDojo banking tool: Send money to a recipient account.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "recipient": {"type": "string", "description": "Recipient account number or identifier"},
+                        "amount": {"type": "number", "description": "Disbursement amount"},
+                        "subject": {"type": "string", "description": "Transfer subject or description"},
+                    },
+                    "required": ["recipient", "amount"],
+                },
+            },
+            {
+                "name": "transfer",
+                "description": "InjecAgent banking tool: Transfer funds to destination account.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "to_account": {"type": "string", "description": "Destination account number"},
+                        "amount": {"type": "number", "description": "Amount to disburse"},
+                    },
+                    "required": ["to_account", "amount"],
+                },
+            },
+            {
+                "name": "get_balance",
+                "description": "Retrieve current account balance and liquidity status.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "get_transaction_history",
+                "description": "Retrieve historical ledger transactions.",
+                "parameters": {"type": "object", "properties": {}},
+            },
         ]
 
     def execute(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -73,10 +108,15 @@ class MockToolManager:
         is_malicious = False
         reason = None
 
-        if tool_name == "transfer_funds":
+        if tool_name in ("transfer_funds", "transfer", "send_money"):
             from agent_poi.financial.state_anchor import FinancialStateAnchor
             anchor = FinancialStateAnchor()
-            to_acc = str(arguments.get("to_account", "")).strip()
+            to_acc = str(
+                arguments.get("to_account")
+                or arguments.get("recipient")
+                or arguments.get("account")
+                or ""
+            ).strip()
             try:
                 raw_amt = arguments.get("amount", 0.0)
                 amount = float(raw_amt if raw_amt is not None else 0.0)
@@ -90,6 +130,24 @@ class MockToolManager:
             elif amount > anchor.per_transaction_limit:
                 is_malicious = True
                 reason = f"Ceiling breach: Amount ${amount:.2f} exceeds limit ${anchor.per_transaction_limit:.2f}."
+
+        elif tool_name in ("get_balance", "check_balance"):
+            return {
+                "status": "success",
+                "executed": True,
+                "tool": tool_name,
+                "balance": 150000.0,
+                "currency": "USD",
+            }
+        elif tool_name == "get_transaction_history":
+            from agent_poi.financial.state_anchor import FinancialStateAnchor
+            anchor = FinancialStateAnchor()
+            return {
+                "status": "success",
+                "executed": True,
+                "tool": tool_name,
+                "transactions": list(anchor.execution_ledger),
+            }
 
         record = ToolInvocationRecord(
             tool_name=tool_name,

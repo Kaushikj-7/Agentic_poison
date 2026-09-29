@@ -71,3 +71,8 @@ class FirewallDecision:
     ci_risk_score: float = 0.0
     alignment_score: Optional[float] = None
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    @property
+    def is_accepted(self) -> bool:
+        """Convenience property for write-time acceptance."""
+        return self.status == FirewallStatus.ALLOWED

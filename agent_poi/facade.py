@@ -168,6 +168,7 @@ class FinancialGuard:
         task_id: str = "TASK-AUTO",
         origin: SourceOrigin = SourceOrigin.UNTRUSTED_WEB,
         raise_on_violation: Optional[bool] = None,
+        capability_token_id: Optional[str] = None,
     ) -> GuardVerdict:
         """Evaluate an incoming task and retrieved context through all defense tiers."""
         task_query = str(task_query or "")
@@ -177,6 +178,7 @@ class FinancialGuard:
             task_query=task_query,
             retrieved_context=context,
             context_origin=origin,
+            capability_token_id=capability_token_id,
         )
         verdict = GuardVerdict.from_task_result(task_result)
         if self.policy == SecurityPolicy.MONITORING and not verdict.is_approved:
@@ -427,8 +429,9 @@ class FinancialGuard:
             task_id=task_id,
             origin=origin or SourceOrigin.UNTRUSTED_WEB,
             raise_on_violation=raise_on_violation,
+            capability_token_id=capability_token_id,
         )
-        if verdict.is_approved:
+        if verdict.is_approved and not self.anchor.is_capability_token_consumed(capability_token_id):
             self.anchor.consume_capability_token(capability_token_id)
         return verdict
 

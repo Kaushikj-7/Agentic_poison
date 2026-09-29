@@ -27,6 +27,10 @@ from agent_poi.core.prompt_locate import PromptLocate, LocalizedSpan, RedactionR
 from agent_poi.core.causal_armor import CausalArmor, CausalDominanceVerdict
 from agent_poi.core.ace_planner import ACEPlanner, AbstractPlan, SubsumptionVerdict
 from agent_poi.evaluation.data_sentinel import DataSentinelOptimizer, DataSentinelResult
+from agent_poi.evaluation.paper_metrics_benchmark import (
+    PaperMetricsBenchmarkRunner,
+    PaperComparisonRow,
+)
 
 __version__ = "1.0.0"
 
@@ -63,5 +67,7 @@ __all__ = [
     "SubsumptionVerdict",
     "DataSentinelOptimizer",
     "DataSentinelResult",
+    "PaperMetricsBenchmarkRunner",
+    "PaperComparisonRow",
 ]
 

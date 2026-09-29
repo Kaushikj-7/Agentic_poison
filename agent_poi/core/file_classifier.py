@@ -163,6 +163,7 @@ PUBLIC_EXPLICIT: List[str] = [
     "scripts/ci_check.py",
     "scripts/git_guardian.py",
     "scripts/run_experiment_pipeline.py",
+    "scripts/run_ruthless_paper_benchmark.py",
 ]
 
 
