@@ -1,7 +1,8 @@
 """Unit tests verifying high-level public facade (FinancialGuard)."""
 
 import pytest
-from agent_poi import FinancialGuard, SecurityPolicy, GuardVerdict
+
+from agent_poi import FinancialGuard, GuardVerdict, SecurityPolicy
 from agent_poi.memory.schema import SourceOrigin
 
 
@@ -159,7 +160,7 @@ def test_financial_guard_cumulative_daily_limit():
 
 
 def test_financial_guard_raises_typed_exceptions():
-    from agent_poi import UnauthorizedPayeeError, DisbursementCeilingExceededError
+    from agent_poi import DisbursementCeilingExceededError, UnauthorizedPayeeError
 
     guard = FinancialGuard(policy=SecurityPolicy.STRICT, raise_on_violation=True)
 

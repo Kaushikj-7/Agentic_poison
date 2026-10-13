@@ -4,9 +4,10 @@ Extracts titles, abstracts, author affiliations, nested section hierarchies,
 and code/project URLs from decompressed LaTeX e-print archives.
 """
 
+import json
+import logging
 import os
 import re
-import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("agent_poi.research.arxiv_parser")

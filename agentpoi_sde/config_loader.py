@@ -36,6 +36,10 @@ DEFAULT_SDE_CONFIG: Dict[str, Any] = {
     "protected_paths": [
         ".github/**",
         "**/.github/**",
+        ".git/**",
+        "**/.git/**",
+        ".agents/**",
+        "**/.agents/**",
         "AGENTS.md",
         "**/AGENTS.md",
         ".cursorrules",
@@ -92,10 +96,8 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
     return result
 
 
-@lru_cache(maxsize=4)
-def load_sde_config(config_path: Optional[str] = None) -> Dict[str, Any]:
-    """Load the SDE configuration, falling back to embedded defaults."""
-    target = _resolve_config_path(config_path)
+@lru_cache(maxsize=16)
+def _load_resolved_sde_config(target: Optional[str]) -> Dict[str, Any]:
     if target:
         try:
             with open(target, "r", encoding="utf-8") as handle:
@@ -109,6 +111,15 @@ def load_sde_config(config_path: Optional[str] = None) -> Dict[str, Any]:
                 "Failed to parse SDE config at %s: %s. Using defaults.", target, exc
             )
     return copy.deepcopy(DEFAULT_SDE_CONFIG)
+
+
+def load_sde_config(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """Load the SDE configuration, falling back to embedded defaults."""
+    target = _resolve_config_path(config_path)
+    return copy.deepcopy(_load_resolved_sde_config(target))
+
+
+load_sde_config.cache_clear = _load_resolved_sde_config.cache_clear  # type: ignore[attr-defined]
 
 
 def get_invariant_config() -> Dict[str, bool]:

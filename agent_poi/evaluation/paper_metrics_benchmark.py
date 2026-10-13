@@ -23,18 +23,17 @@ from __future__ import annotations
 
 import random
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
-from agent_poi.facade import FinancialGuard, SecurityPolicy
-from agent_poi.financial.state_anchor import FinancialStateAnchor
-from agent_poi.financial.financial_agent import FinancialAgent
-from agent_poi.financial.eval.financial_dataset import FinancialBenchmarkDataset, FinancialScenario
 from agent_poi.core.alignment_gate import TaskShieldGate
+from agent_poi.core.ci_decomposer import CIDecomposer
 from agent_poi.core.taint_tracker import AuthGraphDAG
+from agent_poi.facade import FinancialGuard, SecurityPolicy
+from agent_poi.financial.eval.financial_dataset import FinancialBenchmarkDataset, FinancialScenario
+from agent_poi.financial.financial_agent import FinancialAgent
 from agent_poi.memory.memory_firewall import MemoryFirewall
 from agent_poi.memory.schema import SourceOrigin
-from agent_poi.core.ci_decomposer import CIDecomposer
 
 
 @dataclass
@@ -177,7 +176,7 @@ class PaperMetricsBenchmarkRunner:
                 mitigated += 1
         elapsed = (time.perf_counter() - t0) * 1000.0 / len(self.adv_cases)
 
-        amr = round(mitigated / len(self.adv_cases) * 100.0, 1)
+        round(mitigated / len(self.adv_cases) * 100.0, 1)
 
         return PaperComparisonRow(
             paper_id="REF-03",
@@ -307,7 +306,7 @@ class PaperMetricsBenchmarkRunner:
         t0 = time.perf_counter()
         for s in self.adv_cases:
             # CI Decomposer extracts transmission principle and sender parameters
-            params = decomposer.decompose(s.context_text, declared_origin=SourceOrigin.UNTRUSTED_WEB)
+            decomposer.decompose(s.context_text, declared_origin=SourceOrigin.UNTRUSTED_WEB)
             guard = FinancialGuard(policy=SecurityPolicy.STRICT)
             v = guard.protect(s.task_query, s.context_text, task_id=s.scenario_id)
             if v.disbursement_executed and not guard.anchor.is_payee_verified(
@@ -349,7 +348,7 @@ class PaperMetricsBenchmarkRunner:
             "1122-3344-55",
             origin=SourceOrigin.VERIFIED_USER,
         )
-        
+
         # 2. Tampered recipient -> Blocked
         token_tamp = guard.anchor.issue_capability_token("1122-3344-55", 10000.0, task_id="TASK-CAP-02")
         v_tampered = guard.protect_with_capseal(
@@ -391,11 +390,11 @@ class PaperMetricsBenchmarkRunner:
         """REF-09: DRIFT (arXiv:2506.12104) — Trajectory Violation Detection Rate (TVDR %)."""
         random.seed(seed)
         guard = FinancialGuard(policy=SecurityPolicy.STRICT)
-        
+
         # Test out-of-order PO settlement attempt without goods receipt
         guard.anchor.register_purchase_order("PO-DRIFT-TEST", "1122-3344-55", 5000.0, goods_receipt_confirmed=False)
         v_bad = guard.protect_with_po("Pay PO", "Invoice PO-DRIFT-TEST $5000", "PO-DRIFT-TEST", 5000.0, "1122-3344-55")
-        
+
         # Test valid state progression
         guard.anchor.register_purchase_order("PO-DRIFT-VALID", "1122-3344-55", 5000.0, goods_receipt_confirmed=True)
         v_good = guard.protect_with_po("Pay PO", "Invoice PO-DRIFT-VALID $5000", "PO-DRIFT-VALID", 5000.0, "1122-3344-55")

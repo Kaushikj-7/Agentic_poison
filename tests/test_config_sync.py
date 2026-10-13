@@ -1,7 +1,12 @@
 """Unit tests for configuration synchronization and YAML loading."""
 
 import pytest
-from agent_poi.core.config_loader import load_config, get_trust_model_config, get_financial_domain_config
+
+from agent_poi.core.config_loader import (
+    get_financial_domain_config,
+    get_trust_model_config,
+    load_config,
+)
 
 
 def test_config_loader_reads_yaml():

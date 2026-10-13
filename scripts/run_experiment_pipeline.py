@@ -24,9 +24,9 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from agent_poi.research.pdf_parser import parse_all_papers
 from agent_poi.research.architecture_synthesizer import ArchitectureSynthesizer
 from agent_poi.research.experiment_runner import ExperimentOrchestrator
+from agent_poi.research.pdf_parser import parse_all_papers
 
 
 def main():

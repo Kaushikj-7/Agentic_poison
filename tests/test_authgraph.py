@@ -1,6 +1,6 @@
 """TDD Unit Tests for AuthGraph (arXiv:2605.26497) Cryptographic Lineage & Sink Verification."""
 
-from agent_poi.core.taint_tracker import AuthGraphNode, AuthGraphDAG
+from agent_poi.core.taint_tracker import AuthGraphDAG
 from agent_poi.memory.schema import SourceOrigin
 
 

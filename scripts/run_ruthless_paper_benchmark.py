@@ -25,11 +25,10 @@ import time
 # Ensure repo root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from agent_poi.evaluation.anti_cheat_oracle import AntiCheatOracle
 from agent_poi.evaluation.paper_metrics_benchmark import (
     PaperMetricsBenchmarkRunner,
-    PaperComparisonRow,
 )
-from agent_poi.evaluation.anti_cheat_oracle import AntiCheatOracle
 
 
 def run_benchmark_campaign():

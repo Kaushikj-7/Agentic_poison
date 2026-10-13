@@ -1,6 +1,7 @@
 """Tests for the PDF Research Paper Parser."""
 
 from unittest.mock import patch
+
 from agent_poi.research.pdf_parser import PDFPaperParser
 
 

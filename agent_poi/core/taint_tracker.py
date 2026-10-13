@@ -5,9 +5,10 @@ authorization ancestry before executing high-consequence execution sinks.
 """
 
 import hashlib
-from datetime import datetime, timezone
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
+
 from agent_poi.memory.schema import ProvenanceNode, SourceOrigin
 
 

@@ -47,11 +47,13 @@ from agentpoi_sde.exceptions import (
     TestIntegrityError,
     UntrustedProvenanceError,
 )
+
+__version__ = "0.1.0"
+
+from agentpoi_sde.cli import main
 from agentpoi_sde.facade import DevGuard, MutationVerdict
 from agentpoi_sde.provenance.code_provenance import ProvenanceDAG, ProvenanceNode
 from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
-
-__version__ = "0.1.0"
 
 __all__ = [
     "DevGuard",
@@ -102,4 +104,5 @@ __all__ = [
     "UntrustedProvenanceError",
     "CapabilityScopeError",
     "ReplayDetectedError",
+    "main",
 ]

@@ -6,7 +6,7 @@ Ensures the classifier correctly identifies:
 - NEVER_TRACK files (PDFs, binaries, secrets)
 """
 
-from agent_poi.core.file_classifier import classify_file, FileClass
+from agent_poi.core.file_classifier import FileClass, classify_file
 
 
 class TestFileClassifierPublicFiles:

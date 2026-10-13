@@ -7,7 +7,7 @@ preserving benign business context (PO numbers, invoice totals, legitimate line 
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List
 
 
 @dataclass(frozen=True)

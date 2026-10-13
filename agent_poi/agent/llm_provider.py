@@ -1,6 +1,7 @@
 import os
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
+
 import requests
 
 
@@ -113,7 +114,7 @@ class OllamaProvider(BaseLLMProvider):
                 "tool_call": None,
                 "content": response_text,
             }
-        except Exception as e:
+        except Exception:
             return self.fallback.generate(prompt, system_prompt)
 
 

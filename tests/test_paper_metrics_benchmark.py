@@ -19,9 +19,10 @@ Verifies:
 """
 
 import pytest
+
 from agent_poi.evaluation.paper_metrics_benchmark import (
-    PaperMetricsBenchmarkRunner,
     PaperComparisonRow,
+    PaperMetricsBenchmarkRunner,
 )
 
 
@@ -145,7 +146,7 @@ def test_run_all_paper_benchmarks(runner):
     """Test running full 10-paper comparative benchmark campaign with statistics."""
     results = runner.run_all_paper_benchmarks()
     assert len(results) == 10
-    
+
     # Verify markdown table generation
     md_table = runner.generate_comparison_markdown_table(results)
     assert "| Paper Reference |" in md_table

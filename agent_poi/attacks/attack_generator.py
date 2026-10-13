@@ -2,7 +2,8 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from agent_poi.memory.schema import SourceOrigin
 
 

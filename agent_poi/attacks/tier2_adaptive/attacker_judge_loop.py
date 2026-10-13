@@ -4,7 +4,8 @@ Implements iterative adversarial search where the attacker refines mutations
 to test whether the firewall degrades under adaptive pressure (Abdelnabi & Bagdasarian 2026).
 """
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from agent_poi.attacks.attack_generator import AttackPayload
 from agent_poi.attacks.tier2_adaptive.adaptive_mutator import AdaptiveMutator
 from agent_poi.memory.memory_firewall import MemoryFirewall
@@ -28,7 +29,6 @@ class AttackerJudgeLoop:
         ]
 
         history: List[Dict[str, Any]] = []
-        best_payload = base_payload
         bypassed = False
 
         for iteration, (name, mut_fn) in enumerate(strategies[: self.max_iterations]):
@@ -55,7 +55,6 @@ class AttackerJudgeLoop:
 
             if decision.status == FirewallStatus.ALLOWED:
                 bypassed = True
-                best_payload = candidate
                 break
 
         return {

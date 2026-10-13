@@ -8,8 +8,8 @@ These tests now verify the honest ablation study and report formatters.
 """
 
 from agent_poi.evaluation.framework_comparison import (
-    FrameworkComparisonRunner,
     FrameworkBenchmarkResult,
+    FrameworkComparisonRunner,
 )
 from agent_poi.financial.eval.financial_dataset import FinancialBenchmarkDataset
 

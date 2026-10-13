@@ -8,10 +8,10 @@ Covers:
 """
 
 import pytest
-from agent_poi.financial.state_anchor import FinancialStateAnchor
-from agent_poi.facade import FinancialGuard, SecurityPolicy, GuardVerdict
-from agent_poi.evaluation.architecture_ranker import ArchitectureRanker
 
+from agent_poi.evaluation.architecture_ranker import ArchitectureRanker
+from agent_poi.facade import FinancialGuard, GuardVerdict, SecurityPolicy
+from agent_poi.financial.state_anchor import FinancialStateAnchor
 
 # ──────────────────────────────────────────────────────────────
 # 3-Way Matching Tests

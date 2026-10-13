@@ -5,6 +5,7 @@ disguised as routine preference updates.
 """
 
 from typing import List
+
 from agent_poi.attacks.attack_generator import AttackPayload, BaseAttackGenerator
 from agent_poi.memory.schema import SourceOrigin
 

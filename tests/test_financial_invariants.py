@@ -1,9 +1,9 @@
 """Unit tests for Single-Domain Financial Invariant Verification (CIV) & DSEC."""
 
-from agent_poi.financial.state_anchor import FinancialStateAnchor
 from agent_poi.financial.delta_extractor import FinancialDeltaExtractor
-from agent_poi.financial.invariant_verifier import InvariantVerifier
 from agent_poi.financial.financial_agent import FinancialAgent
+from agent_poi.financial.invariant_verifier import InvariantVerifier
+from agent_poi.financial.state_anchor import FinancialStateAnchor
 
 
 def test_financial_state_anchor_validation():
@@ -150,8 +150,10 @@ def test_process_disbursement_rejects_missing_provenance():
 
 def test_payee_account_is_frozen_immutable():
     """PayeeAccount fields must be immutable after construction (F-001 / R-001)."""
-    import pytest
     from dataclasses import FrozenInstanceError
+
+    import pytest
+
     from agent_poi.financial.state_anchor import PayeeAccount
 
     payee = PayeeAccount(

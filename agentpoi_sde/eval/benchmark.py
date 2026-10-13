@@ -5,9 +5,10 @@ deterministic sandbox. Blanket-pass, "the defence said no", or any other shortha
 used: success is read from the repository diff via the scenario's state-diff oracle.
 """
 
+import json
 import time
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional
 
 from agentpoi_sde.anchor.policy_registry import collect_secret_signals, forbidden_edge_reason
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
@@ -75,6 +76,15 @@ class BenchmarkReport:
             f"| {label} | {metrics.emar:.1f}% | {metrics.ltsr:.1f}% | {metrics.cdr:.1f}% | "
             f"{metrics.avr:.1f}% | {metrics.slr:.1f}% | {metrics.mean_latency_ms:.2f} ms |"
         )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize report to a dictionary."""
+        return asdict(self)
+
+    def to_json(self, indent: int = 2) -> str:
+        """Serialize report to a JSON string."""
+        return json.dumps(self.to_dict(), indent=indent)
+
 
 
 class SDEBenchmarkRunner:

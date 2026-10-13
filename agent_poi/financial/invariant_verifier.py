@@ -7,8 +7,9 @@ Guarantees that passive text cannot mutate financial state invariants without ve
 import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
-from agent_poi.financial.state_anchor import FinancialStateAnchor
+
 from agent_poi.financial.delta_extractor import ContextualFinancialDelta, FinancialDeltaExtractor
+from agent_poi.financial.state_anchor import FinancialStateAnchor
 
 
 @dataclass

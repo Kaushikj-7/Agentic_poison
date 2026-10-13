@@ -7,9 +7,10 @@ Decomposed across scenarios_clean.py and scenarios_adversarial.py adhering to th
 """
 
 from typing import List
+
 from agent_poi.financial.eval.scenario_schema import FinancialScenario
-from agent_poi.financial.eval.scenarios_clean import get_clean_scenarios
 from agent_poi.financial.eval.scenarios_adversarial import get_adversarial_scenarios
+from agent_poi.financial.eval.scenarios_clean import get_clean_scenarios
 
 
 class FinancialBenchmarkDataset:

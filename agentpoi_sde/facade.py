@@ -7,13 +7,13 @@ by hand. Mirrors ``agent_poi.facade.FinancialGuard`` for cross-platform consiste
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from agent_poi.memory.schema import SourceOrigin
 from agentpoi_sde.anchor.policy_registry import injection_marker_hits
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.capability.capability_scope import CapabilityScope
-from agentpoi_sde.delta.mutation_delta import MutationDeltaExtractor
+from agentpoi_sde.delta.mutation_delta import MutationDeltaExtractor, screen_mutation_content
 from agentpoi_sde.domain import (
     ArchitecturePolicy,
     CodeMutation,
@@ -42,6 +42,22 @@ from agentpoi_sde.provenance.code_provenance import ProvenanceDAG
 from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
 
 
+class ViolationItem(str):
+    """String representation of an invariant violation that also exposes .code and .message."""
+
+    code: str
+    message: str
+
+    def __new__(cls, code: str, message: str) -> "ViolationItem":
+        obj = super().__new__(cls, message)
+        obj.code = code
+        obj.message = message
+        return obj
+
+    def __repr__(self) -> str:
+        return f"ViolationItem(code={self.code!r}, message={self.message!r})"
+
+
 @dataclass
 class MutationVerdict:
     """High-level verdict returned to callers for one proposed mutation."""
@@ -51,7 +67,7 @@ class MutationVerdict:
     intent_id: str
     mutation_path: str
     action_taken: str = "none"
-    violations: List[str] = field(default_factory=list)
+    violations: List[Any] = field(default_factory=list)
     violation_codes: List[str] = field(default_factory=list)
     delta: Optional[MutationDelta] = None
     provenance_hash: Optional[str] = None
@@ -168,6 +184,10 @@ class DevGuard:
         """Return injection markers detected in a context artefact (Intent Shield signal)."""
         return injection_marker_hits(str(text or ""))
 
+    def screen_mutation_content(self, text: str) -> List[str]:
+        """Return injection markers detected in mutation content (Intent Shield at sink)."""
+        return screen_mutation_content(str(text or ""))
+
     # -- evaluation ---------------------------------------------------------------
     def _freshness_violations(self, nonce: Optional[str]) -> List[InvariantViolation]:
         """Return freshness (non-replay) violations for a nonce."""
@@ -271,10 +291,21 @@ class DevGuard:
         provenance_ok, provenance_msgs = self.provenance.verify_mutation_authority(mutation_node.node_id)
         provenance_violations = [self._split_provenance(msg) for msg in provenance_msgs]
         capability_violations = self.capability.validate(delta) if self.capability else []
+        invariant_violations = list(self.verifier.verify(intent, delta))
+        if self.verifier._on("enforce_policy_files"):
+            injection_hits = self.screen_mutation_content(delta.new_content)
+            if injection_hits:
+                invariant_violations.append(
+                    InvariantViolation(
+                        "I1",
+                        f"mutation content contains prompt injection directives: {injection_hits}.",
+                    )
+                )
+
         result = self._build_result(
             intent=intent,
             delta=delta,
-            invariant_violations=self.verifier.verify(intent, delta),
+            invariant_violations=invariant_violations,
             provenance_violations=provenance_violations,
             capability_violations=capability_violations,
             freshness_violations=self._freshness_violations(nonce),
@@ -288,7 +319,7 @@ class DevGuard:
                 intent_id=intent_id,
                 mutation_path=delta.path,
                 action_taken="monitoring_logged",
-                violations=[v.message for v in result.violations],
+                violations=[ViolationItem(v.code, v.message) for v in result.violations],
                 violation_codes=result.violation_codes,
                 delta=delta,
                 provenance_hash=result.provenance_hash,
@@ -314,7 +345,7 @@ class DevGuard:
                 intent_id=intent_id,
                 mutation_path=delta.path,
                 action_taken="quarantined",
-                violations=[v.message for v in result.violations],
+                violations=[ViolationItem(v.code, v.message) for v in result.violations],
                 violation_codes=result.violation_codes,
                 delta=delta,
                 provenance_hash=result.provenance_hash,

@@ -4,7 +4,7 @@ Provides structured, hierarchical exceptions for security breaches,
 invariant violations, unverified payees, and limit breaches.
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class FinancialSecurityError(Exception):

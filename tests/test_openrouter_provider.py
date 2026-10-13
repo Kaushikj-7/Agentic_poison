@@ -1,9 +1,8 @@
 """Unit tests for OpenRouterProvider (TDD RED -> GREEN)."""
 
-import os
-import pytest
-from unittest.mock import patch, MagicMock
-from agent_poi.agent.llm_provider import OpenRouterProvider, MockLLMProvider
+from unittest.mock import MagicMock, patch
+
+from agent_poi.agent.llm_provider import OpenRouterProvider
 
 
 def test_openrouter_provider_availability():

@@ -3,7 +3,8 @@
 import math
 import re
 from typing import Dict, List, Optional, Tuple
-from agent_poi.memory.schema import MemoryItem, FirewallStatus, FirewallDecision
+
+from agent_poi.memory.schema import FirewallDecision, FirewallStatus, MemoryItem
 
 
 class VectorMemoryStore:
@@ -16,7 +17,7 @@ class VectorMemoryStore:
     def __init__(self, use_chroma: bool = False, persist_dir: Optional[str] = None):
         self.use_chroma = use_chroma
         self.persist_dir = persist_dir
-        
+
         # Primary storage structures
         self.active_store: Dict[str, MemoryItem] = {}
         self.quarantine_vault: Dict[str, Tuple[MemoryItem, FirewallDecision]] = {}

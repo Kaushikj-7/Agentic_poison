@@ -144,6 +144,8 @@ DEVELOPER_ONLY_RULES: List[str] = [
 PUBLIC_EXPLICIT: List[str] = [
     # Production framework code
     "agent_poi/*.py",
+    "agentpoi_sde/*.py",
+    "agentpoi_sde/**/*.py",
     # Public tests
     "tests/*.py",
     "tests/conftest.py",

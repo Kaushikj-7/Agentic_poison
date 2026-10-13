@@ -8,6 +8,7 @@ Phase 2: Subsumption verification ensuring concrete tool invocations do not esca
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
 from agent_poi.financial.state_anchor import FinancialStateAnchor
 
 

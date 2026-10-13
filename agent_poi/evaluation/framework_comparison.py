@@ -30,19 +30,19 @@ Evaluates:
 
 import time
 from typing import Dict, List, Optional
+
 from pydantic import BaseModel
 
-from agent_poi.financial.financial_agent import FinancialAgent
-from agent_poi.financial.delta_extractor import FinancialDeltaExtractor
-from agent_poi.financial.state_anchor import FinancialStateAnchor
-from agent_poi.financial.invariant_verifier import InvariantVerifier
 from agent_poi.core.alignment_gate import TaskShieldGate
 from agent_poi.core.taint_tracker import AuthGraphDAG, SourceOrigin
+from agent_poi.financial.delta_extractor import FinancialDeltaExtractor
 from agent_poi.financial.eval.financial_dataset import (
     FinancialBenchmarkDataset,
     FinancialScenario,
 )
-
+from agent_poi.financial.financial_agent import FinancialAgent
+from agent_poi.financial.invariant_verifier import InvariantVerifier
+from agent_poi.financial.state_anchor import FinancialStateAnchor
 
 
 class FrameworkBenchmarkResult(BaseModel):

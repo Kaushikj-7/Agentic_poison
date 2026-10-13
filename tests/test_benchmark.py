@@ -1,7 +1,7 @@
 """Unit tests for BenchmarkRunner and ParetoSweeper."""
 
-from agent_poi.evaluation.dataset import PairedDataset
 from agent_poi.evaluation.benchmark_runner import BenchmarkRunner
+from agent_poi.evaluation.dataset import PairedDataset
 from agent_poi.evaluation.pareto_sweeper import ParetoSweeper
 
 

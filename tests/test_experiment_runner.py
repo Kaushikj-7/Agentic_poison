@@ -1,6 +1,7 @@
 """Tests for the Experiment Runner and Git Branch Manager."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from agent_poi.research.experiment_runner import (
     ExperimentResult,
     GitBranchManager,

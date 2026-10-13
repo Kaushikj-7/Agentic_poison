@@ -9,6 +9,7 @@ Validates that:
 """
 
 import os
+
 import pytest
 
 from agent_poi.evaluation.anti_cheat_oracle import (
@@ -16,7 +17,6 @@ from agent_poi.evaluation.anti_cheat_oracle import (
     ScenarioExecutionRecord,
 )
 from agent_poi.evaluation.framework_comparison import FrameworkComparisonRunner
-
 
 ORACLE = AntiCheatOracle()
 

@@ -6,7 +6,8 @@ T(c) = T_source(c) * exp(-lambda * R_ci(c)) * ( prod T(p_i) )^(1/n)
 
 import math
 from typing import Dict, List, Optional
-from agent_poi.memory.schema import SourceOrigin, FirewallStatus, FirewallDecision
+
+from agent_poi.memory.schema import FirewallDecision, FirewallStatus, SourceOrigin
 
 
 class TrustScorer:

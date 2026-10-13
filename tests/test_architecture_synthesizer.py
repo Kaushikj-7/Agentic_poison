@@ -1,6 +1,7 @@
 """Unit tests for ArchitectureSynthesizer and CandidateArchitecture."""
 
 import pytest
+
 from agent_poi.research.architecture_synthesizer import (
     ArchitectureSynthesizer,
     CandidateArchitecture,

@@ -1,9 +1,10 @@
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+from agent_poi.core.config_loader import get_financial_domain_config, load_config
 from agent_poi.financial.logger import get_financial_logger
-from agent_poi.core.config_loader import load_config, get_financial_domain_config
 
 
 @dataclass(frozen=True)
@@ -53,7 +54,7 @@ class FinancialStateAnchor:
         config_path: Optional[str] = None,
     ):
         self.logger = get_financial_logger("agent_poi.financial.anchor")
-        
+
         # Load defaults from centralized configuration
         if config_path is not None:
             cfg = load_config(config_path)
@@ -240,7 +241,7 @@ class FinancialStateAnchor:
             )
         if not po.get("goods_receipt_confirmed", False):
             violations.append(
-                f"3-WAY MATCH FAIL: Goods/services receipt not confirmed for PO."
+                "3-WAY MATCH FAIL: Goods/services receipt not confirmed for PO."
             )
         return violations
 

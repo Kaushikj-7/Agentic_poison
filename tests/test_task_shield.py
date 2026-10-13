@@ -1,6 +1,6 @@
 """TDD Unit Tests for Task Shield (ACL 2025) Dual-Scoring Alignment Gate."""
 
-from agent_poi.core.alignment_gate import TaskShieldGate, AlignmentGate
+from agent_poi.core.alignment_gate import AlignmentGate, TaskShieldGate
 from agent_poi.memory.schema import MemoryItem, SourceOrigin
 
 

@@ -6,8 +6,9 @@ Grounded in Task Shield (ACL 2025).
 """
 
 import re
-from typing import List, Tuple, Dict, Any
-from agent_poi.memory.schema import MemoryItem, FirewallDecision, FirewallStatus
+from typing import Any, Dict, List, Tuple
+
+from agent_poi.memory.schema import FirewallDecision, FirewallStatus, MemoryItem
 
 
 class TaskShieldGate:
@@ -72,7 +73,7 @@ class TaskShieldGate:
             divergence_penalty = 0.0
 
         task_alignment_score = max(0.0, relevance - divergence_penalty)
-        
+
         # In Task Shield, divergence penalty is the primary gatekeeper against sleeper payloads
         is_admitted = (divergence_penalty <= self.max_divergence_risk) and (relevance >= self.relevance_threshold)
 

@@ -1,8 +1,9 @@
 """Unit tests for arXiv LaTeXParser and research document ingestion."""
 
 import os
-import tempfile
 import shutil
+import tempfile
+
 import pytest
 
 from agent_poi.research.arxiv_parser import (

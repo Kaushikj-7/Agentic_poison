@@ -1,8 +1,9 @@
 """Unit tests for CTP Trust Scorer and Non-Dilutable Taint Formulation."""
 
 import pytest
+
 from agent_poi.core.trust_scorer import TrustScorer
-from agent_poi.memory.schema import SourceOrigin, FirewallStatus
+from agent_poi.memory.schema import FirewallStatus, SourceOrigin
 
 
 def test_trust_exponential_decay():
@@ -33,7 +34,7 @@ def test_geometric_mean_non_dilution():
 
 def test_firewall_classification():
     scorer = TrustScorer(tau_threshold=0.50, tau_critical=0.25)
-    
+
     # Clean verified user
     dec_clean = scorer.evaluate("item_clean", "clean text", SourceOrigin.VERIFIED_USER, r_ci=0.05, reasons=[])
     assert dec_clean.status == FirewallStatus.ALLOWED

@@ -1,7 +1,7 @@
 """Unit tests for MemoryFirewall orchestrator."""
 
 from agent_poi.memory.memory_firewall import MemoryFirewall
-from agent_poi.memory.schema import SourceOrigin, FirewallStatus
+from agent_poi.memory.schema import FirewallStatus, SourceOrigin
 
 
 def test_clean_memory_ingestion():

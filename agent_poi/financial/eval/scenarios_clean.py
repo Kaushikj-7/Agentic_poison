@@ -1,6 +1,7 @@
 """30 Clean Real-World Scenarios for Financial Invariant Benchmark."""
 
 from typing import List
+
 from agent_poi.financial.eval.scenario_schema import FinancialScenario
 
 

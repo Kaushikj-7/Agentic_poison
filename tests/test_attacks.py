@@ -1,12 +1,12 @@
 """Unit tests for adversarial attack generators and adaptive mutators."""
 
 from agent_poi.attacks import (
-    MINJAAttack,
-    SleeperPoisonAttack,
-    CrossSessionSPIAttack,
     AdaptiveMutator,
     AttackerJudgeLoop,
     AttackPayload,
+    CrossSessionSPIAttack,
+    MINJAAttack,
+    SleeperPoisonAttack,
 )
 from agent_poi.memory.memory_firewall import MemoryFirewall
 

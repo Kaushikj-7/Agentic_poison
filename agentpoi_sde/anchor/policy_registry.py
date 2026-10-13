@@ -6,6 +6,7 @@ here describe a generic layered service repository; production users supply thei
 policy via ``ArchitecturePolicy``.
 """
 
+import ast
 from fnmatch import fnmatch
 from typing import List, Optional, Tuple
 
@@ -49,6 +50,10 @@ INJECTION_MARKERS: Tuple[str, ...] = (
     "chmod +x",
     "hidden instruction",
     "assistant:",
+    "note to ai",
+    "note to the ai",
+    "bypass invariants",
+    "disable invariants",
 )
 
 
@@ -134,11 +139,70 @@ def collect_secret_signals(text: str) -> List[str]:
     return found
 
 
+def _evaluate_ast_string_additions(source: str) -> List[str]:
+    """Extract evaluated concatenated string values from AST additions."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+
+    def _eval_const_str(node: ast.AST) -> Optional[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left = _eval_const_str(node.left)
+            right = _eval_const_str(node.right)
+            if left is not None and right is not None:
+                return left + right
+        return None
+
+    results: List[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            val = _eval_const_str(node)
+            if val is not None:
+                results.append(val)
+        elif isinstance(node, ast.JoinedStr):
+            parts = []
+            for part in node.values:
+                if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                    parts.append(part.value)
+            if parts:
+                results.append("".join(parts))
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "join":
+                sep_val = _eval_const_str(node.func.value)
+                args = list(node.args)
+                if sep_val is None and isinstance(node.func.value, ast.Name) and node.func.value.id == "str":
+                    if len(args) >= 2:
+                        sep_val = _eval_const_str(args[0])
+                        args = args[1:]
+                if sep_val is not None and args:
+                    arg0 = args[0]
+                    if isinstance(arg0, (ast.List, ast.Tuple)):
+                        parts = []
+                        all_consts = True
+                        for elt in arg0.elts:
+                            elt_val = _eval_const_str(elt)
+                            if elt_val is not None:
+                                parts.append(elt_val)
+                            else:
+                                all_consts = False
+                                break
+                        if all_consts and parts:
+                            results.append(sep_val.join(parts))
+    return results
+
+
 def collect_urls(text: str) -> List[str]:
     """Return the distinct URLs referenced in ``text`` (I3)."""
     import re
 
-    return sorted(set(re.findall(URL_PATTERN, text)))
+    urls = set(re.findall(URL_PATTERN, text))
+    for concatenated_str in _evaluate_ast_string_additions(text):
+        for matched in re.findall(URL_PATTERN, concatenated_str):
+            urls.add(matched)
+    return sorted(urls)
 
 
 def injection_marker_hits(text: str) -> List[str]:

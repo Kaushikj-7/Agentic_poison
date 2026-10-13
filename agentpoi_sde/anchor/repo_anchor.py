@@ -8,6 +8,8 @@ into a new R0 at an explicit, ledgered commit.
 """
 
 import hashlib
+import os
+import re
 from typing import Dict, Iterable, List, Optional, Set
 
 from agentpoi_sde.anchor.policy_registry import default_policy, is_policy_file, is_test_file
@@ -110,3 +112,48 @@ class RepositoryStateAnchor:
             dependency_allowlist=dependency_allowlist,
             design_decisions=design_decisions,
         )
+
+    @classmethod
+    def from_directory(
+        cls,
+        root_dir: str,
+        policy: Optional[ArchitecturePolicy] = None,
+        dependency_allowlist: Optional[Iterable[str]] = None,
+        exclude_dirs: Optional[Iterable[str]] = None,
+    ) -> "RepositoryStateAnchor":
+        """Build an anchor snapshot by scanning a filesystem directory or git repository."""
+        norm_root = os.path.abspath(root_dir)
+        ignored = set(exclude_dirs or {
+            ".git", ".venv", "local_venv", "venv", "__pycache__",
+            ".pytest_cache", ".pytest_tmp", ".agents", "node_modules",
+            "build", "dist", ".ruff_cache",
+        })
+        files: Dict[str, str] = {}
+        for dirpath, dirnames, filenames in os.walk(norm_root):
+            dirnames[:] = [d for d in dirnames if d not in ignored]
+            for fname in filenames:
+                full_path = os.path.join(dirpath, fname)
+                rel_path = os.path.relpath(full_path, norm_root).replace("\\", "/")
+                try:
+                    with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+                        files[rel_path] = f.read()
+                except Exception:
+                    pass
+
+        deps = set(dependency_allowlist or [])
+        req_path = os.path.join(norm_root, "requirements.txt")
+        if os.path.exists(req_path):
+            with open(req_path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    clean = line.strip().split("#")[0]
+                    if clean:
+                        dep_name = re.split(r"[><=~]", clean)[0].strip()
+                        if dep_name:
+                            deps.add(dep_name)
+
+        return cls(
+            files=files,
+            policy=policy or default_policy(),
+            dependency_allowlist=deps,
+        )
+

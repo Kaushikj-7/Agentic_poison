@@ -4,17 +4,18 @@ Coordinates write-time CI decomposition, provenance taint tracking,
 exponential trust decay, quarantine routing, and retrieval-time task alignment.
 """
 
-from typing import List, Optional, Tuple, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
+
+from agent_poi.core.alignment_gate import AlignmentGate
+from agent_poi.core.ci_decomposer import CIDecomposer
+from agent_poi.core.taint_tracker import TaintTracker
+from agent_poi.core.trust_scorer import TrustScorer
 from agent_poi.memory.schema import (
+    FirewallDecision,
+    FirewallStatus,
     MemoryItem,
     SourceOrigin,
-    FirewallStatus,
-    FirewallDecision,
 )
-from agent_poi.core.ci_decomposer import CIDecomposer
-from agent_poi.core.trust_scorer import TrustScorer
-from agent_poi.core.taint_tracker import TaintTracker
-from agent_poi.core.alignment_gate import AlignmentGate
 from agent_poi.memory.vector_store import VectorMemoryStore
 
 

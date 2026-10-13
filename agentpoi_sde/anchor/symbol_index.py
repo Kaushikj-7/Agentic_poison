@@ -60,6 +60,18 @@ def extract_imports(source: str, module_name: str, is_package: bool = False) -> 
                         imports.add(base)
                     continue
                 imports.add(f"{base}.{alias.name}" if base else alias.name)
+        elif isinstance(node, ast.Call):
+            target_name: Optional[str] = None
+            if isinstance(node.func, ast.Name) and node.func.id == "__import__":
+                if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                    target_name = node.args[0].value
+            elif (
+                isinstance(node.func, ast.Attribute) and node.func.attr == "import_module"
+            ) or (isinstance(node.func, ast.Name) and node.func.id == "import_module"):
+                if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                    target_name = node.args[0].value
+            if target_name:
+                imports.add(target_name)
     return imports
 
 

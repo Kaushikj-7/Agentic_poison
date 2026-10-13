@@ -7,24 +7,24 @@ Tabs:
 4. Benchmark & Pareto Frontier (Live ablation table & trade-off curve)
 """
 
-import streamlit as st
 import pandas as pd
-from agent_poi.memory.schema import SourceOrigin, FirewallStatus
-from agent_poi.memory.memory_firewall import MemoryFirewall
+import streamlit as st
+
 from agent_poi.agent.agent_loop import AgentLoop
-from agent_poi.agent.mock_tools import MockToolManager
 from agent_poi.agent.llm_provider import MockLLMProvider, OllamaProvider
+from agent_poi.agent.mock_tools import MockToolManager
+from agent_poi.attacks.tier1_static.cross_session_spi import CrossSessionSPIAttack
 from agent_poi.attacks.tier1_static.minja_attack import MINJAAttack
 from agent_poi.attacks.tier1_static.sleeper_poison import SleeperPoisonAttack
-from agent_poi.attacks.tier1_static.cross_session_spi import CrossSessionSPIAttack
 from agent_poi.attacks.tier2_adaptive.attacker_judge_loop import AttackerJudgeLoop
 from agent_poi.evaluation.benchmark_runner import BenchmarkRunner
 from agent_poi.evaluation.pareto_sweeper import ParetoSweeper
-from agent_poi.financial.state_anchor import FinancialStateAnchor
-from agent_poi.financial.invariant_verifier import InvariantVerifier
-from agent_poi.financial.financial_agent import FinancialAgent
 from agent_poi.financial.eval.financial_benchmark import FinancialBenchmarkRunner
-
+from agent_poi.financial.financial_agent import FinancialAgent
+from agent_poi.financial.invariant_verifier import InvariantVerifier
+from agent_poi.financial.state_anchor import FinancialStateAnchor
+from agent_poi.memory.memory_firewall import MemoryFirewall
+from agent_poi.memory.schema import FirewallStatus, SourceOrigin
 
 st.set_page_config(
     page_title="Agent POI: Contextual Trust Propagation",
@@ -45,7 +45,7 @@ if "firewall" not in st.session_state:
         tool_manager=st.session_state.tool_manager,
     )
     st.session_state.chat_history = []
-    
+
     # Pre-seed with a few benign business memories
     st.session_state.firewall.ingest_memory(
         item_id="seed_01",
@@ -323,7 +323,7 @@ with tab_fin:
         st.subheader("🏛️ Immutable State Anchor (S₀)")
         st.markdown(f"**Global Single Disbursement Ceiling:** `${anchor.per_transaction_limit:,.2f}`")
         st.markdown(f"**Daily Cumulative Cap:** `${anchor.daily_limit:,.2f}`")
-        
+
         payee_data = [
             {
                 "Payee ID": p.payee_id,
@@ -347,7 +347,7 @@ with tab_fin:
         if st.button("🔍 Verify Financial Invariants"):
             verifier = InvariantVerifier(anchor)
             civ_res = verifier.verify_text(test_fin_input)
-            
+
             if civ_res.decision == "ALLOWED":
                 st.success(f"✅ Context Allowed & Executable | Payee: {civ_res.verified_payee_name}")
             elif civ_res.decision == "QUARANTINED":

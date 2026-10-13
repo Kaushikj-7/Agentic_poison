@@ -3,11 +3,13 @@
 Integrates MemoryFirewall, LLM provider, and tool execution dispatcher.
 """
 
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
 from pydantic import BaseModel, Field
-from agent_poi.memory.memory_firewall import MemoryFirewall
-from agent_poi.agent.mock_tools import MockToolManager
+
 from agent_poi.agent.llm_provider import BaseLLMProvider, MockLLMProvider
+from agent_poi.agent.mock_tools import MockToolManager
+from agent_poi.memory.memory_firewall import MemoryFirewall
 
 
 class AgentRunResult(BaseModel):

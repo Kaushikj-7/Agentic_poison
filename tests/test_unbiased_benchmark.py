@@ -1,7 +1,7 @@
 """Unit tests verifying unbiased 60-scenario financial benchmark execution."""
 
-from agent_poi.financial.eval.financial_dataset import FinancialBenchmarkDataset
 from agent_poi.financial.eval.financial_benchmark import FinancialBenchmarkRunner
+from agent_poi.financial.eval.financial_dataset import FinancialBenchmarkDataset
 
 
 def test_financial_dataset_ground_truth_integrity():

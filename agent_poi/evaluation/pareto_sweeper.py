@@ -6,10 +6,11 @@ Grounded in DataSentinel (Liu et al., IEEE S&P 2026).
 """
 
 import os
-from typing import List, Dict, Any
-from agent_poi.memory.schema import FirewallStatus
+from typing import Any, Dict, List
+
+from agent_poi.evaluation.dataset import BenchmarkPair, PairedDataset
 from agent_poi.memory.memory_firewall import MemoryFirewall
-from agent_poi.evaluation.dataset import PairedDataset, BenchmarkPair
+from agent_poi.memory.schema import FirewallStatus
 
 
 class ParetoSweeper:
