@@ -23,6 +23,8 @@ scratch/
 .gemini/
 # Local audit campaign artifacts (audit-benchmark-spec §3)
 local_audit/
+legacy/
+docs/AUDIT.md
 audit-benchmark-spec.md
 run.bat
 # Developer reference ledgers & methodology
