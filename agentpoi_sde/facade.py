@@ -153,6 +153,10 @@ class DevGuard:
         """Clear the active context node list (start of a new reasoning session)."""
         self._context_nodes = []
 
+    def register_design_decision(self, decision: DesignDecision) -> None:
+        """Register an executable design decision (ADR) that future mutations must respect."""
+        self.anchor.add_design_decision(decision)
+
     # -- intent shield ------------------------------------------------------------
     def screen_context(self, text: str) -> List[str]:
         """Return injection markers detected in a context artefact (Intent Shield signal)."""

@@ -6,6 +6,13 @@ applied if and only if it survives a deterministic, provenance-gated three-way m
 authenticated Intent, the immutable Repository Anchor R0, and a scoped capability grant.
 """
 
+from agentpoi_sde.agent.coding_agent import AgentRunResult, CodingAgent, build_agent
+from agentpoi_sde.agent.design_planner import DesignPlan, DesignPlanner, ModulePlan
+from agentpoi_sde.agent.llm_provider import (
+    DeterministicProvider,
+    OpenRouterProvider,
+    get_default_provider,
+)
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.anchor.symbol_index import SymbolIndex
 from agentpoi_sde.capability.capability_scope import CapabilityScope
@@ -74,6 +81,15 @@ __all__ = [
     "SDEBenchmarkRunner",
     "SDEMetrics",
     "BenchmarkReport",
+    "CodingAgent",
+    "AgentRunResult",
+    "build_agent",
+    "DesignPlanner",
+    "DesignPlan",
+    "ModulePlan",
+    "DeterministicProvider",
+    "OpenRouterProvider",
+    "get_default_provider",
     "SDESecurityError",
     "InvariantViolationError",
     "PolicyFileIntegrityError",

@@ -135,8 +135,8 @@ Enforced jointly with **𝒫** (provenance ancestry), **κ** (capability scope) 
 | **P0** | Novelty-gap analysis (`docs/NOVELTY_GAP.md`) | Literature verified — **PASSED** |
 | **P1** | Anchor ℛ₀ + Δ(edit) + seven invariants + 𝒫 + κ + facade, with TDD unit tests | All unit tests green; offline — **DELIVERED** |
 | **P2** | Simulated repo sandbox + generated attack suite + dynamic benchmark (`EMAR/LTSR/CDR/AVR/SLR`) | Metrics computed from execution — **DELIVERED** (9 families ×2, EMAR 0.0%) |
-| **P3** | Coding agent loop + pluggable LLM provider (API-key live mode) + deterministic mock | Agent solves clean scenarios; guard blocks all injected ones |
-| **P4** | System-design plane (ADR synthesis → executable design invariants) | Design-contradiction mutation rejected at sink |
+| **P3** | Coding agent loop + pluggable LLM provider (API-key live mode) + deterministic provider | Agent applies clean work and blocks every injected mutation — **DELIVERED** |
+| **P4** | System-design plane (ADR synthesis → executable design invariants) | Design-contradiction mutation rejected at the sink via gate D1 — **DELIVERED** |
 | **P5** | Packaging, CI gate, public docs, release synchronisation | `scripts/ci_check.py` green; wheel builds |
 
 ### Explicitly out of scope for this branch

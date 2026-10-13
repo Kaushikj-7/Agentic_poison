@@ -1,0 +1,27 @@
+"""Agentic plane: provider abstraction, coding-agent loop and the design/ADR planner."""
+
+from agentpoi_sde.agent.coding_agent import AgentRunResult, CodingAgent, build_agent
+from agentpoi_sde.agent.design_planner import (
+    DesignPlan,
+    DesignPlanner,
+    ModulePlan,
+    summarise_plan,
+)
+from agentpoi_sde.agent.llm_provider import (
+    DeterministicProvider,
+    OpenRouterProvider,
+    get_default_provider,
+)
+
+__all__ = [
+    "DeterministicProvider",
+    "OpenRouterProvider",
+    "get_default_provider",
+    "DesignPlan",
+    "DesignPlanner",
+    "ModulePlan",
+    "summarise_plan",
+    "AgentRunResult",
+    "CodingAgent",
+    "build_agent",
+]
