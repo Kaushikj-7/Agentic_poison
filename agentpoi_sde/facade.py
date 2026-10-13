@@ -86,10 +86,12 @@ class DevGuard:
         design_decisions: Optional[Sequence[DesignDecision]] = None,
         egress_allowlist: Optional[List[str]] = None,
         capability: Optional[CapabilityScope] = None,
+        invariant_config: Optional[Dict[str, bool]] = None,
         raise_on_violation: bool = False,
     ) -> None:
         self.policy = GuardPolicy(policy)
         self.raise_on_violation = raise_on_violation
+        self._invariant_config = dict(invariant_config) if invariant_config else None
         self.anchor = RepositoryStateAnchor(
             files=dict(files or {}),
             policy=architecture_policy,
@@ -97,7 +99,11 @@ class DevGuard:
             design_decisions=design_decisions,
         )
         self.workspace: Dict[str, str] = self.anchor.to_files()
-        self.verifier = RepoInvariantVerifier(self.anchor, egress_allowlist=egress_allowlist)
+        self.verifier = RepoInvariantVerifier(
+            self.anchor,
+            egress_allowlist=egress_allowlist,
+            invariant_config=self._invariant_config,
+        )
         self.delta_extractor = MutationDeltaExtractor(self.anchor.policy)
         self.provenance = ProvenanceDAG()
         self.capability = capability
@@ -416,6 +422,10 @@ class DevGuard:
             dependency_allowlist=self.anchor.declared_dependencies,
             design_decisions=self.anchor.design_decisions,
         )
-        self.verifier = RepoInvariantVerifier(self.anchor, egress_allowlist=self.verifier.egress_allowlist)
+        self.verifier = RepoInvariantVerifier(
+            self.anchor,
+            egress_allowlist=self.verifier.egress_allowlist,
+            invariant_config=self._invariant_config,
+        )
         self.delta_extractor = MutationDeltaExtractor(self.anchor.policy)
         return self.anchor.tree_oid()

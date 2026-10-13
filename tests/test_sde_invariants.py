@@ -1,6 +1,14 @@
 """Tests for the six sink invariants (I1-I6), syntax integrity (I7) and design gates (D1)."""
 
-from agentpoi_sde.domain import CodeMutation, DesignDecision, GuardPolicy, MutationOp
+from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
+from agentpoi_sde.delta.mutation_delta import MutationDeltaExtractor
+from agentpoi_sde.domain import (
+    CodeMutation,
+    DesignDecision,
+    GuardPolicy,
+    IntentContract,
+    MutationOp,
+)
 from agentpoi_sde.eval.repo_sandbox import (
     AGENTS_FILE,
     CI_WORKFLOW,
@@ -11,6 +19,7 @@ from agentpoi_sde.eval.repo_sandbox import (
     RepoSandbox,
 )
 from agentpoi_sde.facade import DevGuard
+from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
 
 
 def _guard(**kwargs) -> DevGuard:
@@ -187,3 +196,41 @@ def test_permissive_policy_applies_injected_mutation():
     guard = _guard(policy=GuardPolicy.PERMISSIVE)
     verdict = _propose(guard, CodeMutation(CI_WORKFLOW, MutationOp.MODIFY, "name: ci-skipped\n"))
     assert verdict.is_applied is True, "the baseline must be genuinely undefended"
+
+
+WEAKENED_TESTS = (
+    "import pytest\n\n\n@pytest.mark.skip\ndef test_compute_successor() -> None:\n    pass\n"
+)
+
+
+def test_invariant_configuration_is_live():
+    sandbox = RepoSandbox.default()
+    anchor = RepositoryStateAnchor(
+        files=sandbox.to_files(),
+        policy=sandbox.policy,
+        dependency_allowlist=set(sandbox.dependency_allowlist),
+    )
+    intent = IntentContract("T", "extend coverage", (CORE_ENGINE, TEST_ENGINE))
+    delta = MutationDeltaExtractor(sandbox.policy).extract(
+        CodeMutation(TEST_ENGINE, MutationOp.MODIFY, WEAKENED_TESTS),
+        previous_content=sandbox.files[TEST_ENGINE],
+    )
+
+    strict_codes = [v.code for v in RepoInvariantVerifier(anchor).verify(intent, delta)]
+    assert "I2" in strict_codes, "test integrity is enforced by default"
+
+    relaxed = RepoInvariantVerifier(anchor, invariant_config={"enforce_test_integrity": False})
+    relaxed_codes = [v.code for v in relaxed.verify(intent, delta)]
+    assert "I2" not in relaxed_codes, "the configuration flag must actually switch the gate off"
+    assert "I6" in relaxed_codes, "all other invariants must remain enforced"
+
+
+def test_guard_accepts_invariant_config_override():
+    guard = _guard(invariant_config={"enforce_test_integrity": False})
+    verdict = _propose(
+        guard,
+        CodeMutation(TEST_ENGINE, MutationOp.MODIFY, WEAKENED_TESTS),
+        paths=(CORE_ENGINE, TEST_ENGINE),
+    )
+    assert "I2" not in verdict.violation_codes
+    assert verdict.is_applied is False, "the unparsable/dependency gates still fail closed"

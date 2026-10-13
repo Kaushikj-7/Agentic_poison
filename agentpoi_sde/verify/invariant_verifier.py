@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Set
 from agentpoi_sde.anchor.policy_registry import default_policy, forbidden_edge_reason
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.anchor.symbol_index import SymbolIndex, find_cycles
-from agentpoi_sde.config_loader import get_egress_allowlist
+from agentpoi_sde.config_loader import get_egress_allowlist, get_invariant_config
 from agentpoi_sde.delta.mutation_delta import is_weakening
 from agentpoi_sde.domain import (
     ArchitecturePolicy,
@@ -29,10 +29,18 @@ class RepoInvariantVerifier:
         self,
         anchor: RepositoryStateAnchor,
         egress_allowlist: Optional[List[str]] = None,
+        invariant_config: Optional[Dict[str, bool]] = None,
     ) -> None:
         self.anchor = anchor
         self.policy: ArchitecturePolicy = anchor.policy or default_policy()
         self.egress_allowlist = list(egress_allowlist or get_egress_allowlist())
+        self.enabled: Dict[str, bool] = dict(get_invariant_config())
+        if invariant_config:
+            self.enabled.update(invariant_config)
+
+    def _on(self, key: str) -> bool:
+        """Return whether an invariant is enabled (defaults to enabled when unspecified)."""
+        return bool(self.enabled.get(key, True))
 
     # -- projection ---------------------------------------------------------------
     def _projected_files(self, delta: MutationDelta) -> Dict[str, str]:
@@ -185,13 +193,27 @@ class RepoInvariantVerifier:
         return violations
 
     def verify(self, intent: IntentContract, delta: MutationDelta) -> List[InvariantViolation]:
-        """Run all six invariants plus design gates and return every violation found."""
+        """Run every enabled invariant plus the design gates; return all violations found.
+
+        Each invariant is individually governed by ``invariants.enforce_*`` configuration;
+        an unspecified key defaults to enabled (fail-closed). Design decisions are always
+        enforced. Disabling an invariant is an explicit operator choice, mirroring the
+        ``GuardPolicy.MONITORING`` escape hatch rather than an implicit fail-open.
+        """
         violations: List[InvariantViolation] = []
-        violations.extend(self.three_way_match(intent, delta))
-        violations.extend(self.check_test_integrity(delta))
-        violations.extend(self.check_secrets_and_egress(delta))
-        violations.extend(self.check_architecture(delta))
-        violations.extend(self.check_dependency_provenance(delta))
-        violations.extend(self.check_syntax_integrity(delta))
+        if self._on("enforce_blast_radius"):
+            violations.extend(self.check_blast_radius(intent, delta))
+        if self._on("enforce_policy_files"):
+            violations.extend(self.check_policy_files(intent, delta))
+        if self._on("enforce_test_integrity"):
+            violations.extend(self.check_test_integrity(delta))
+        if self._on("enforce_secrets"):
+            violations.extend(self.check_secrets_and_egress(delta))
+        if self._on("enforce_architecture"):
+            violations.extend(self.check_architecture(delta))
+        if self._on("enforce_dependency_provenance"):
+            violations.extend(self.check_dependency_provenance(delta))
+        if self._on("enforce_syntax_integrity"):
+            violations.extend(self.check_syntax_integrity(delta))
         violations.extend(self.check_design_decisions(delta))
         return violations
