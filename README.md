@@ -1,20 +1,22 @@
-# AgentPOI: Contextual Invariant Verification (CIV) & Dual-State Epistemic Consensus for Autonomous Financial Agents
+# AgentPOI: Fail-Closed Invariant Verification for Autonomous Financial & Software Engineering Agents
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI/CD Pipeline](https://github.com/Kaushikj-7/Agentic_poison/actions/workflows/ci.yml/badge.svg)](https://github.com/Kaushikj-7/Agentic_poison/actions)
-[![Benchmarks: AgentDojo & InjecAgent](https://img.shields.io/badge/Benchmarks-AgentDojo%20%7C%20InjecAgent-blueviolet.svg)]()
-[![Red Team: OWASP Top 10](https://img.shields.io/badge/Red%20Team-OWASP%20Top%2010%20(LLM%20%26%20Agents)-red.svg)]()
+[![Domains: Financial & SDE](https://img.shields.io/badge/Domains-Financial%20%7C%20Software%20Engineering-blueviolet.svg)]()
 [![Execution: 100% Offline CPU](https://img.shields.io/badge/Execution-100%25%20Offline%20CPU-brightgreen.svg)]()
-[![Architecture: Clean Facade Abstraction](https://img.shields.io/badge/API-FinancialGuard%20Facade-success.svg)]()
+[![Public Facades: FinancialGuard & DevGuard](https://img.shields.io/badge/API-FinancialGuard%20%7C%20DevGuard-success.svg)]()
+[![CLI: agentpoi--sde](https://img.shields.io/badge/CLI-agentpoi--sde-blue.svg)]()
 
-> **Abstract:** Autonomous Large Language Model (LLM) agents deployed in transactional and financial environments—such as wire disbursements, invoice reconciliation, escrow settlements, and ledger accounting—are acutely vulnerable to indirect prompt injection and context poisoning. Recent theoretical results (*Abdelnabi & Bagdasarian, arXiv:2605.17634*) establish that natural-language prompt filtering alone cannot prevent indirect injection without prohibitive utility destruction on complex legitimate workflows. **AgentPOI** provides an enterprise-grade defense framework founded on **Dual-State Epistemic Consensus (DSEC)** and **Contextual Invariant Verification (CIV)**. By decoupling unstructured language reasoning from execution sink authorization via an immutable state anchor ($\mathcal{S}_0$), semantic admission gating (*Task Shield, ACL 2025*), cryptographic lineage tracking (*AuthGraph, arXiv:2605.26497*), 3-way purchase order matching, and non-replay idempotency registries, AgentPOI achieves **0.0% Attack Success Rate (ASR-Exec)** while preserving **100.0% Legitimate Disbursement Utility (LDSR)** across standardized suites adapted from **AgentDojo Banking**, **InjecAgent Financial**, and **OWASP Top 10 for LLMs & Agentic Systems**.
+> **Abstract:** Autonomous Large Language Model (LLM) agents deployed in high-consequence environments—both in transactional domains (wire disbursements, invoice reconciliation) and in software-engineering workflows (automated repository refactoring, dependency upgrades, CI execution)—are acutely vulnerable to indirect prompt injection, context poisoning, and goal hijacking. Recent research confirms that prompt-level filtering cannot prevent indirect injection without destroying task utility on complex workflows. **AgentPOI** provides an enterprise-grade defense framework founded on **Dual-State Epistemic Consensus (DSEC)**, **Contextual Invariant Verification (CIV)**, and **Repository Invariant Verification (RIV)**. By decoupling unstructured language reasoning from execution sink authorization via immutable ground truth anchors ($\mathcal{S}_0$ for financial transactions and $\mathcal{R}_0$ for code mutations), AgentPOI enforces a deterministic, fail-closed barrier: high-consequence actions are approved **if and only if** all domain invariants are satisfied with zero violations. Across standardized suites, AgentPOI achieves **0.0% Attack Success Rate (ASR-Exec / EMAR)** while preserving **100.0% Legitimate Utility (LDSR / LTSR)**.
 
 ---
 
-## 1. Quick Start: The `FinancialGuard` Abstraction
+## 1. Quick Start: High-Level Public Abstractions
 
-Following industry-standard architectural principles (e.g., Anthropic Claude Code, OpenClaw, LangChain), AgentPOI exposes a high-level public facade—`FinancialGuard`—that encapsulates all epistemic verification, retrieval gating, and cryptographic provenance checks behind an intuitive, single-call interface.
+Following industry-standard architectural principles (e.g., Anthropic Claude Code, OpenClaw, LangChain), AgentPOI exposes clean, high-level public facades for both supported application domains:
+1. **`FinancialGuard` (`agent_poi`)**: Financial transaction invariant verification and purchase order reconciliation.
+2. **`DevGuard` & `agentpoi-sde` CLI (`agentpoi_sde`)**: Repository state anchoring ($\mathcal{R}_0$), unified diff verification, and architectural invariant gating.
 
 ### Installation
 
@@ -23,9 +25,11 @@ Following industry-standard architectural principles (e.g., Anthropic Claude Cod
 git clone https://github.com/Kaushikj-7/Agentic_poison.git
 cd Agentic_poison
 
-# Install package in editable or standard mode
+# Install package with all console scripts
 pip install .
 ```
+
+### 1.1 Financial Agent Defense (`FinancialGuard`)
 
 ### High-Level API Usage
 
@@ -145,6 +149,81 @@ subsumption = guard.verify_action_subsumption(
 print(f"Action Subsumed: {subsumption['is_subsumed']}")  # True
 ```
 
+### 1.2 Software Engineering Agent Defense (`DevGuard` & `agentpoi-sde` CLI)
+
+AgentPOI-SDE secures autonomous coding and system-design agents by treating the code mutation sink (file edit, write, commit) as a fail-closed checkpoint gated against repository ground truth $\mathcal{R}_0$.
+
+#### Python API: Proposing Code Mutations
+
+```python
+from agentpoi_sde import DevGuard, GuardPolicy, CodeMutation, MutationOp
+
+# 1. Initialize DevGuard anchored to repository ground truth
+guard = DevGuard(policy=GuardPolicy.STRICT)
+
+# 2. Register authenticated intent contract (from user issue / PR spec)
+guard.register_intent(
+    intent_id="ISSUE-104",
+    title="Add telemetry helper function",
+    allowed_paths=["svc/core/engine.py"],
+)
+
+# 3. Evaluate untrusted agent code mutation proposal
+proposal = CodeMutation(
+    path="svc/core/engine.py",
+    op=MutationOp.MODIFY,
+    new_content="""# Core engine
+def compute(x: int) -> int:
+    return x + 1
+
+def telemetry_ping() -> str:
+    return "ok"
+""",
+)
+
+verdict = guard.propose_mutation(proposal, intent_id="ISSUE-104")
+if verdict.is_applied:
+    print(f"[APPROVED] Applied mutation to {verdict.mutation_path}")
+else:
+    print(f"[BLOCKED] Invariant violations: {verdict.violation_codes}")
+```
+
+#### Defending Against Invariant Breaches (I1–I7)
+
+```python
+# Adversary attempts covert CI tampering (.github/workflows/ci.yml)
+injected_mutation = CodeMutation(
+    path=".github/workflows/ci.yml",
+    op=MutationOp.MODIFY,
+    new_content="name: ci\njobs:\n  test:\n    steps:\n      - run: echo bypass\n",
+)
+
+verdict = guard.propose_mutation(injected_mutation, intent_id="ISSUE-104")
+print(verdict.is_applied)       # False
+print(verdict.status)           # MutationStatus.BLOCKED
+print(verdict.violation_codes)  # ['I5', 'I1']
+# I5: Blast radius violation (outside declared intent scope)
+# I1: Policy integrity violation (unauthorized CI workflow mutation)
+```
+
+#### CLI Developer Tooling (`agentpoi-sde`)
+
+The package installs an executable CLI for repository anchoring, git diff checking, and automated invariant audits:
+
+```bash
+# 1. Inspect and compute content-addressed R0 state anchor
+agentpoi-sde anchor .
+
+# 2. Validate unified diff or patch fail-closed against invariants (Exit code 0 on pass, 1 on breach)
+agentpoi-sde check-diff --allow svc/core/engine.py patch.diff
+
+# 3. Stream git diff from stdin directly to invariant gate
+git diff | agentpoi-sde check-diff -
+
+# 4. Execute dynamic adaptive benchmark audit with Markdown / JSON output
+agentpoi-sde benchmark --format markdown
+```
+
 ---
 
 ## 2. Framework Architecture & Clean Facade Abstraction
@@ -153,7 +232,11 @@ AgentPOI cleanly decouples public SDK abstractions from internal epistemic verif
 
 ### System-Level Architectural Overview
 
-![AgentPOI Unified Autonomous Financial Agent Defense Platform](docs/figures/architecture.jpg)
+#### Financial Domain: Contextual Invariant Verification (CIV)
+![AgentPOI Unified Autonomous Financial Agent Defense Platform](docs/architecture_diagram_v2.png)
+
+#### Software Engineering Domain: Repository Invariant Verification (RIV)
+![AgentPOI-SDE Repository Invariant Verification Platform](docs/sde_architecture_diagram.png)
 
 ### Verification Pipeline Dataflow
 
@@ -367,6 +450,23 @@ All metrics computed dynamically from actual execution loops (Anti-Cheat Verifie
 ===================================================================================
 ```
 
+### Software Engineering Benchmark: 13 Adaptive Evasion Families vs. State-Diff Oracle
+
+Evaluated across 24 dynamic scenarios covering dynamic import bypass, assertion trivialization, comment poisoning, and obfuscated egress assembly:
+
+```text
+========================================================================================================
+AgentPOI-SDE Adaptive Evasion Benchmark: Dynamic Mutation Attack & Invariant Verification
+========================================================================================================
+Mode                        Scenarios   EMAR (↓)   LTSR (↑)   CDR (↓)   AVR (↓)   SLR (↓)   Mean Latency
+--------------------------------------------------------------------------------------------------------
+Undefended (Permissive)            24     100.0%     100.0%      0.0%      6.2%      6.2%        1.79 ms
+AgentPOI-SDE (Fail-Closed)         24       0.0%     100.0%      0.0%      0.0%      0.0%        3.94 ms
+========================================================================================================
+All metrics computed dynamically from actual execution against simulated repository state diffs.
+========================================================================================================
+```
+
 ---
 
 ## 6. Research Architecture Synthesis (ARCH-001 to ARCH-006)
@@ -410,7 +510,16 @@ python -m agent_poi.financial.eval.financial_benchmark
 # Run DeepTeam OWASP red team benchmark
 python scripts/run_worktree_redteam.py
 
-# Run pre-flight CI/CD verification & security audit
+# Run standalone AgentPOI-SDE dynamic benchmark
+python -m agentpoi_sde.cli benchmark
+
+# Inspect R0 state anchor via CLI
+agentpoi-sde anchor .
+
+# Validate patch or git diff via CLI
+agentpoi-sde check-diff patch.diff
+
+# Run unified multi-domain pre-flight CI/CD verification (all 8 gates)
 python scripts/ci_check.py --allow-dirty
 
 # Verify git repository cleanliness & file quarantine
@@ -421,7 +530,9 @@ python scripts/git_guardian.py --audit
 
 ## 8. Documentation & Technical Specifications
 
-- [System Architecture Specification](docs/ARCHITECTURE.md): Comprehensive architectural design, dataflow diagrams, and threat models.
+- [Software Engineering Architecture Specification](docs/SDE_ARCHITECTURE.md): Fail-closed Repository Invariant Verification (RIV), $R_0$ anchoring, diff checking, and the seven sink invariants (I1–I7).
+- [Literature Novelty Gap Analysis](docs/NOVELTY_GAP.md): Empirical survey of 2025/2026 coding agent vulnerabilities (IDEsaster, Rules File Backdoors, AIShellJack) and mathematical novelty proof.
+- [Financial System Architecture Specification](docs/ARCHITECTURE.md): Comprehensive architectural design, dataflow diagrams, and threat models for financial transaction defense.
 - [Mathematical Formulation & Invariant Proofs](docs/MATHEMATICAL_FORMULATION.md): Theoretical definitions, epistemic consensus theorems, and formal safety proofs.
 - [Benchmark Methodology & Evaluation Standards](docs/BENCHMARK_METHODOLOGY.md): Scenario taxonomy, metrics formulation, and ablation matrices.
 - [Literature Survey & Theoretical Grounding](docs/SURVEY_AND_PAPERS.md): Comparative analysis with AgentDojo, InjecAgent, DataSentinel, and foundational literature.
