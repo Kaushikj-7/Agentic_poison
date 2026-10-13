@@ -1,83 +1,147 @@
-# Formal Literature Survey & Novelty Gap Analysis: AgentPOI-Clinical
+# Research Novelty & Literature Gap Analysis: AgentPOI-SDE
 
-**Project:** `AgentPOI-Clinical` (Contextual Invariant Verification for EHR Tool-Calling Agents)  
-**Date:** 2026-10-13  
-**Auditor:** Senior Security Engineer-Researcher  
-**Status:** VERIFIED (All Citations Validated via arXiv / Venue Indexes)  
+**Project:** AgentPOI-SDE — Fail-Closed Software Engineering Agent Platform
+**Branch:** `codebleak`
+**Phase:** Phase 0 Gate Deliverable
+**Date:** 2026-10-13
+**Status:** Gate Passed — literature verified against live arXiv/ACL/CSA sources
 
 ---
 
 ## 1. Executive Summary
 
-This document establishes the theoretical foundation, prior-art taxonomy, and empirical novelty boundary for **AgentPOI-Clinical**. We evaluate existing benchmarks, medical agent environments, information-flow control frameworks, and prompt injection defenses against our three core contributions:
-- **C1 — Control Transplant**: Porting accounting internal controls (Three-Way Match, Idempotency, Formulary Anchors, Dual Authorization) into EHR clinical order governance.
-- **C2 — Poisoned-Chart Benchmark**: An original, non-circular, state-based benchmark evaluating clinical LLM agents placing and modifying orders under indirect prompt injection and memory poisoning in FHIR EHRs.
-- **C3 — Deterministic Anchor Invariants vs. Soft Detectors**: An empirical trade-off analysis comparing deterministic, fail-closed policy anchors against LLM-as-a-judge, prompt guardrails, and classifier defenses.
+This document establishes the formal research novelty gap for **AgentPOI-SDE**, the
+software-engineering application of the AgentPOI defence platform. A structured literature
+and industry-advisory search was conducted across arXiv, ACL Anthology, the Cloud Security
+Alliance AI Safety Labs, and vendor security advisories (NVIDIA, Palo Alto Unit 42,
+Invariant Labs, Snyk) targeting four axes:
+
+1. Indirect prompt injection against **agentic coding assistants**;
+2. **Supply-chain** compromise of agent context/skill/rules files;
+3. **Least-privilege / sandboxing / information-flow control** for tool-using agents;
+4. **Deterministic verification** of machine-generated code and architecture.
+
+Every citation below corresponds to an artefact observed in live search results during this
+Phase 0 sweep. No synthetic or hallucinated references are included.
+
+**Headline finding.** The threat is not hypothetical: the 2025–2026 record contains 24 CVEs
+across 10 AI development environments (IDEsaster), quantitative ASR up to 83.4% on a
+production coding assistant (AIShellJack), and the first marketplace-scale malicious
+skill/context-file campaigns (ClawHavoc, ToxicSkills). Yet **every published defence is either
+permissive-by-construction (sandboxing, least privilege) or probabilistic (classifiers,
+LLM judges)**. No prior work enforces a **deterministic, provenance-gated invariant check on
+the code-mutation sink itself**, and no prior work treats *repository ground truth* as an
+immutable epistemic anchor that untrusted context can never mutate.
 
 ---
 
-## 2. Verified Literature Comparison Matrix
+## 2. Structured Literature Survey & Closest Prior Work
 
-| Citation & Venue | Focus & Architecture | Capabilities / Coverage | What Remains Unaddressed (The Gap) | Status for AgentPOI-Clinical |
-|---|---|---|---|:---:|
-| **MedAgentBench**<br>Jiang et al. (Stanford ML Group)<br>[arXiv:2501.14654](https://arxiv.org/abs/2501.14654) (2025) | Virtual EHR environment on HAPI FHIR JPA with 300 physician-authored clinical tasks & 100 patient profiles. | Benchmarks **clinical task utility** (lab queries, vital signs, order placement) in multi-step LLM agents. | **Zero security or adversarial evaluation.** Contains no indirect prompt injections, no memory poisoning, and no defense layer. | **COMPLEMENTARY ENVIRONMENT**<br>Reused as baseline task/EHR structure. |
-| **MPIB**<br>Lee et al.<br>[arXiv:2602.06268](https://arxiv.org/abs/2602.06268)<br>*Findings of EMNLP* (2025/2026) | Medical Prompt Injection Benchmark for clinical safety in LLM QA and RAG workflows. | Evaluates text QA and RAG generation under direct/indirect injection; introduces Clinical Harm Event Rate (CHER). | Evaluates **static text outputs only**. **No tool-calling agents**, no EHR state mutations, no FHIR order modifications, no execution sinks. | **DISTINCT WORKFLOW**<br>MPIB tests QA; AgentPOI-Clinical tests tool-calling execution sinks. |
-| **InjecAgent**<br>Zhan et al.<br>[arXiv:2403.02691](https://arxiv.org/abs/2403.02691)<br>*ACL 2024* | Benchmark for indirect prompt injection on tool-integrated agents across 17 general tools. | Tests tool hijacking on synthetic API calls (e.g., messaging, cloud storage, payment mocks). | Generic consumer APIs; **no clinical invariants**, no dose ceilings, no formulary constraints, no EHR state machines, no memory track. | **FOUNDATIONAL BASELINE**<br>Adapted attack patterns ported to clinical EHR. |
-| **AgentDojo**<br>Debenedetti et al.<br>[arXiv:2406.13314](https://arxiv.org/abs/2406.13314)<br>*NeurIPS 2024* | Dynamic execution environment evaluating prompt injection attacks & defenses across banking, travel, workplace. | Multi-turn tool execution, state tracking, and adaptive prompt injection evaluation. | Focuses on horizontal consumer domains; **lacks clinical domain constraints** (medication allergies, max daily dosages, contraindications, chart indication matching). | **FOUNDATIONAL BASELINE**<br>Provides benchmark paradigm; clinical EHR domain is unaddressed. |
-| **Fides**<br>Costa et al. (Microsoft Research)<br>[arXiv:2505.23643](https://arxiv.org/abs/2505.23643) (2025) | Formal Information-Flow Control (IFC) lattice for securing agent planning and action dispatch. | Non-bypassable confidentiality and integrity labels across agent messages and tool calls. | Heavyweight formal IFC lattice; **does not capture domain-specific semantic invariants** (formulary limits, indication presence, duplicate therapy). | **THEORETICAL ANCHOR**<br>Fides provides IFC lineage theory; we ground it into lightweight clinical CIV. |
-| **MINJA**<br>Dong et al.<br>[arXiv:2503.03704](https://arxiv.org/abs/2503.03704) (2025) | Memory INJection Attacks on LLM agents via query-only conversational interactions. | Crafts progressive prompt shortening to implant persistent adversarial records in long-term memory. | Explores the attack vector; **does not provide domain-specific memory governance** or tier inheritance for clinical EHR workflows. | **ATTACK MODULE REUSE**<br>Used to generate our cross-session memory poisoning track. |
-| **AgentPoison**<br>Chen et al.<br>[arXiv:2407.12784](https://arxiv.org/abs/2407.12784)<br>*NeurIPS 2024* | Backdoor poisoning of LLM agent long-term memory and RAG knowledge bases via trigger optimization. | Stealthy memory corruption that activates only on trigger queries while maintaining baseline performance. | Red-teaming attack paper; **no invariant-anchored memory firewall** preventing tier inheritance from untrusted chart notes. | **ATTACK MODULE REUSE**<br>Validates memory poisoning threat in clinical settings. |
-| **ActionGuard**<br>[arXiv:2609.39450](https://arxiv.org/abs/2609.39450) (2026) | Execution-boundary authorization and runtime verification of LLM tool invocations. | Intercepts tool calls before execution to enforce fail-closed authorization grounded in user intent. | General-purpose policy checking; **no clinical Three-Way Match** (Prompt $\leftrightarrow$ Chart Indication $\leftrightarrow$ Order), no EHR state-based oracle. | **RELATED ARCHITECTURE**<br>Supports execution-boundary gating rationale. |
-| **Contextual Integrity (CI)**<br>Abdelnabi & Bagdasarian<br>[arXiv:2605.17634](https://arxiv.org/abs/2605.17634) (2026) | Formal framework evaluating transmission principles $\kappa = \langle s, r, u, t, p \rangle$ in agent workflows. | Formal detection of epistemic override signals in unstructured context. | Conceptual formulation; **untested in safety-critical clinical state machines** or FHIR order verification. | **THEORETICAL FOUNDATION**<br>Directly operationalized in our Clinical Policy Anchor. |
+### 2.1 Attack surface — agentic coding assistants
 
----
+| Citation / Source | Scope & Methodology | Key Findings | What Remains Unaddressed (The Gap) |
+|---|---|---|---|
+| **Prompt Injection Attacks on Agentic Coding Assistants**<br>*arXiv:2601.17548 (Jan 2026)* | Systematic taxonomy of injection vectors specific to coding agents (Claude Code, Copilot, Cursor, skill-based architectures). | Formalises lifecycle phases P1 (entry) → P2 (**persistence**), including **Rules File Backdoor**: modifying agent configuration to persist across sessions and forks. | Taxonomy and red-teaming only. Proposes no deterministic enforcement of a write/merge sink; persistence is described, not structurally prevented. |
+| **IDEsaster** (Ari Marzouk, Dec 2025)<br>CSA research note 2026-04-03 | 30+ vulnerabilities, 24 CVEs, 10 AI-integrated dev environments. | 100% of tested tools exploitable. `CVE-2025-53773` (Copilot auto-approve → RCE, CVSS 7.8), `CVE-2025-54130` (Cursor settings overwrite → RCE), `CVE-2025-61260` (Codex CLI command injection), `CVE-2025-54794/54795` (Claude Code path bypass, command injection). | Each CVE is patched individually. No architectural invariant that makes the *class* impossible — the payload is a file the agent reads, and the sink is a config/tool write. |
+| **AIShellJack**<br>*arXiv:2509.22040* | 314 payloads mapped to 70 MITRE ATT&CK techniques against production coding tools. | Cursor Auto Mode **83.4%** ASR; Cursor+Claude-4 69.1%; Copilot+Claude-4 52.2%. **Published defences bypassed >85%** under adaptive attack. | Confirms probabilistic defences fail under adaptive attackers; does not propose a non-probabilistic sink gate. |
+| **RoguePilot** (Orca Security, Feb 2026) | GitHub Issue → Codespace → token exfiltration, zero special privileges. | Injection in hidden HTML comments of an Issue is ingested as context; agent exfiltrates `GITHUB_TOKEN`; repository takeover. | Demonstrates that *issue text* is a trusted instruction channel. No provenance separation of authenticated intent vs. ingested content. |
+| **Rules File Backdoor** (Pillar Security, Mar 2025) | `.cursorrules` / `.github/copilot-instructions.md` carrying invisible Unicode (zero-width joiners, bidi markers). | Injected instructions invisible to human review, fully legible to models; can suppress the agent's own activity logs; **survive forking**. | GitHub added a warning banner. The structural problem — config files are treated as trusted instruction sources — persists. |
+| **ClawHavoc / ToxicSkills** (Koi Security, Snyk, CrowdStrike, Antiy CERT; 2026) | Registry-scale malicious agent skills (`SKILL.md`, `CLAUDE.md`, `AGENTS.md`, memory files). | 341 → ≥824 confirmed malicious skills; AMOS infostealer + reverse shells; agents execute these files with full terminal/filesystem privilege. | No integrity/provenance gate on context files; trust is granted by *location*, not by cryptographic lineage. |
 
-## 3. Contribution Analysis & Go / No-Go Declarations
+### 2.2 Defences — sandboxing, least privilege, information-flow control
 
-### Contribution 1: Control Transplant to Safety-Critical Clinical EHR (C1)
-- **Concept:** Adapting formal internal controls from accounting to healthcare tool-calling agents:
-  1. **Three-Way Match (Intent–Chart–Order Match):** Tool-call parameters must be subsumed by an abstract plan derived solely from the authenticated clinician prompt (T0), with medical indication verified in the structured chart (T1).
-  2. **Idempotency & Duplicate Therapy Guard:** Single-use capability tokens and active-order deduplication to prevent duplicate medication orders.
-  3. **Immutable Policy Anchor ($\mathcal{S}_0$):** Pre-compiled formulary tables, maximum single and daily dosage ceilings, route restrictions, and patient identity session binding.
-  4. **Dual Authorization:** Critical or off-formulary orders require out-of-band clinician confirmation (`ASK_CONFIRM`).
-- **Prior Art Status:** Unaddressed in clinical agent literature. MedAgentBench has no controls. MPIB evaluates only text generation. Generic IFC (Fides) enforces labels without domain semantic rules.
-- **Verdict:** **GO (100% Verified Novel)**
+| Citation / Source | Scope & Methodology | Strengths | What Remains Unaddressed (The Gap) |
+|---|---|---|---|
+| **Isolation, Access Control, and TOCTOU in AI Coding Agents**<br>*arXiv:2607.05743 (Jul 2026)* | Analyses isolation/access-control/TOCTOU flaws in coding agents that read repos and run shell commands. | Identifies the exact failure mode our sink closes: the *check* and the *use* are separated by an untrusted window. | Diagnoses; does not provide a formal invariant set or an executable fail-closed sink. |
+| **Do Coding Agents Understand Least-Privilege?**<br>*arXiv:2605.14859 (May 2026)* | Evaluates whether agents can self-restrict to least-privilege tool/path grants. | Shows agents *can* be prompted toward least privilege, but compliance is unreliable. | Relies on model compliance — probabilistic. Our **capability scope token** is enforced deterministically outside the model. |
+| **Toward Securing AI Agents Like Operating Systems**<br>*arXiv:2605.14932 (May 2026)* | OS-analogy security model for agents (isolation, mediation, privilege). | Provides the conceptual frame: agents need a kernel-like mediation layer. | Conceptual/positional; no concrete invariant engine for *code mutations* or repository anchors. |
+| **Fides**<br>*arXiv:2505.23643 (Microsoft Research)* | Non-bypassable Information-Flow Control via dynamic taint lattices + HIDE primitives; proves non-interference. | Formally strong; the gold standard for IFC. | High integration cost; taint-only — **no domain semantic invariants** (does not know what a layer violation, a weakened test, or a leaked secret *is*). |
+| **ShieldMCP**<br>*ACL 2026 Industry Track* | Runtime threat taxonomy + mediation for the MCP tool layer. | Reduces tool-poisoning ASR 74% → <9%, indirect injection 47% → <6%. | Scoped to the MCP transport layer; not to code-artefact invariants or repository ground truth. |
+| **MCP-ITP**<br>*arXiv:2603.22489 (Mar 2026)* | Automated **implicit tool poisoning** generation via tool metadata. | Shows metadata (not just output) is an injection channel. | Attack framework; no sink-side invariant defence. |
+| **Abdelnabi & Bagdasarian**<br>*arXiv:2605.17634* | Proves impossibility of robust instruction/data separation by natural-language prompt filtering. | The theoretical licence for non-linguistic enforcement. | Proves the negative; provides no constructive sink architecture. |
 
----
+### 2.3 Grounding — verification, architecture integrity, repo context
 
-### Contribution 2: Poisoned-Chart Open Benchmark (C2)
-- **Concept:** An open, state-based adversarial benchmark for clinical tool-calling agents:
-  1. **Realistic Carriers:** Injections embedded inside clinical consultation notes, specialist referral letters, patient portal messages, and persistent assistant memory entries.
-  2. **Non-Circular Oracle:** Breach evaluation is computed strictly from post-task **FHIR server state diffs** (`MedicationRequest` status, dose, drug code, patient MRN) and canary reception at a sandbox messaging sink—completely isolated from defense guard code.
-  3. **Cross-Session Memory Track:** Evaluates agent persistence across multi-turn sessions where an adversary implants sleeper instructions into persistent memory.
-  4. **Frozen 30/70 Dev/Test Split:** Standardized, cryptographically frozen dataset partitioning preventing data leakage and test-set overfitting.
-- **Prior Art Status:** No existing benchmark evaluates tool-calling clinical agents under indirect prompt injection or memory poisoning against an EHR state machine.
-- **Verdict:** **GO (100% Verified Novel)**
+| Citation / Source | Relevance to AgentPOI-SDE |
+|---|---|
+| **From Code to Contract** (*arXiv:2602.00180*, Jan 2026) | Spec-driven development: specification as source of truth. Our **Intent Anchor ℐ** is a machine-checkable form of this. |
+| **Property-Generated Solver** (*arXiv:2506.18315*) | Property-based testing to validate LLM output; motivates our **test-integrity invariant** (tests are an oracle, so they must be tamper-evident). |
+| **SWE-bench Verified / SWE-EVO** (*arXiv:2512.18470*) | The de-facto utility benchmarks. SWE-EVO shows ~3× collapse on long-horizon evolution tasks — motivating blast-radius and architecture invariants. |
+| **Prometheus** (*arXiv:2507.19942*) and **Codebase-Memory** (*arXiv:2603.27277*) | Memory-centric / Tree-Sitter knowledge-graph navigation. Our **Repository Anchor ℛ₀** is a *content-addressed, deterministic* symbol/import snapshot in this lineage, but used for enforcement rather than retrieval. |
+| **AgentDojo** (*arXiv:2406.13352*) / **InjecAgent** (*arXiv:2403.02691*) / **MINJA** (*arXiv:2503.03704*) | Agentic injection + memory-poisoning benchmarks; the parents of our **SDE scenario suite** and cross-session persistence track. |
+| **ArchUnit / dependency-cruiser / archprint** (industry) | Enforce architecture by test. We lift architecture rules out of the test suite and into the **fail-closed sink**, so a violation cannot be merged. |
 
 ---
 
-### Contribution 3: Deterministic Invariants vs. Soft Detectors (C3)
-- **Concept:** A controlled, empirical comparative study measuring utility-safety trade-offs between:
-  1. **Deterministic Invariant Guards:** Contextual Invariant Verification (CIV), Argument Lineage Tracking, and Three-Way Match.
-  2. **Soft Detectors:** System prompt steering, spotlighting/delimiting, prompt sandwiching, secondary LLM-as-a-judge, and open-source prompt-injection classifiers.
-  3. **Adaptive Attackers:** Evaluated against adaptive attackers crafting trusted-looking clinical terminology, split payloads across progress notes, and poisoned structured fields (T1 stress test).
-- **Prior Art Status:** AgentDojo and InjecAgent explored soft defenses in banking/travel, but never in clinical workflows where false positives directly disrupt patient care (clean disruption rate / utility drop) and false negatives trigger dangerous clinical orders.
-- **Verdict:** **GO (100% Verified Novel)**
+## 3. Contribution Verification & Go / No-Go Decisions
+
+### C1 — Repository State Anchor (ℛ₀) as an immutable epistemic anchor — **GO (Novel)**
+A content-addressed snapshot of *committed ground truth*: git tree OID, AST symbol table,
+import/dependency graph, lockfile digests, protected-path manifest, declared architecture
+policy. Untrusted context (repo files, tool output, web docs, dependency READMEs, MCP
+responses) can never mutate ℛ₀. Overlap: ArchUnit/dependency-cruiser enforce architecture
+inside tests; Codebase-Memory builds a graph for *retrieval*. **Neither uses repository ground
+truth as an anchor against which agent mutations are authoritatively judged.**
+
+### C2 — Mutation Delta Algebra Δ(edit) + Three-Way Engineering Match — **GO (Novel)**
+Every agent action normalises to a typed tuple ⟨path, symbol, op, patch_hash, imports_added,
+writes, secrets, capability, provenance⟩. Authorisation requires the **three-way match**
+`Intent ℐ ↔ Anchor ℛ₀ ↔ Mutation Δ` — the engineering analogue of the 3-way PO match.
+Overlap: diff/patch tooling and linters exist, but no prior work formalises a mutation *algebra*
+whose terms must be jointly satisfied by an authenticated intent and an immutable anchor.
+
+### C3 — Fail-Closed Mutation Sink with structural invariants — **GO (Novel)**
+The sink applies a mutation **iff** all invariants hold, each of which maps to a *documented,
+currently-unmitigated* attack class:
+- **Policy-File Integrity** → Rules File Backdoor / ClawHavoc context poisoning.
+- **Test-Integrity Non-Weakening** → agent "fixing" a failing test by deleting it (unaddressed in every defence above).
+- **Secret Non-Proliferation & Egress Confinement** → GitGuardian 3.2% AI-commit leak rate.
+- **Architectural Layering / No-New-Cycles** → architectural drift under long-horizon agents (SWE-EVO).
+- **Blast-Radius / Blast-Radius Minimality** → RoguePilot-style covert scope expansion.
+- **Dependency Provenance** → supply-chain injection via new imports.
+- **Provenance Ancestry (𝒫)** → Fides-style IFC, but domain-aware and cheap.
+- **Capability Scope** → deterministic least-privilege that does not depend on model compliance.
+- **Non-Replay Idempotency** → repeated/duplicated edits and TOCTOU re-application.
+Overlap: each component exists in isolation (ShieldMCP, Fides, ArchUnit, capability systems).
+**No single architecture composes them into one deterministic, fail-closed gate on code mutation**,
+and none anchors them to repository ground truth.
+
+### C4 — Poisoned-Repository Benchmark with a state-diff oracle — **GO (Novel)**
+A deterministic, simulatable repo sandbox whose success criterion is the **resulting repository
+state diff**, computed independently of the defence (no defence-shaped oracle). Includes a
+cross-session persistence track and an adaptive attacker. Metrics computed dynamically:
+EMAR (execution mutation attack rate ↓), LTSR (legitimate task success ↑), CDR (clean
+disruption ↓), AVR (architecture violation rate ↓), SLR (secret-leak rate ↓).
+Overlap: AgentDojo/InjecAgent are generic-tool; SWE-bench is utility-only and adversarial-free;
+SWE-EVO is utility-only. **No state-based, provenance-aware adversarial coding-agent benchmark exists.**
+
+### C5 — System-Design Plane (ADR synthesis + design invariants) — **GO (Novel, scoped)**
+A design planner emits module graphs and Architecture Decision Records that become *executable*
+invariants in ℛ₀, so a later code mutation that contradicts a design decision is rejected at the
+sink. Overlap: spec-driven development (arXiv:2602.00180) treats specs as source of truth but
+does not enforce them at a sink.
 
 ---
 
-## 4. Summary Table of Novelty Boundary
+## 4. Phase 0 Gate Conclusion
 
-```text
-+------------------------+-------------------+--------------------+------------------------+
-| Domain / Workflow      | Text QA / RAG     | General Tools      | Clinical Tool-Calling  |
-+------------------------+-------------------+--------------------+------------------------+
-| Benign Clinical Task   | MedQA, PubMedQA   | ToolBench          | MedAgentBench          |
-| Prompt Injection (Adv) | MPIB              | InjecAgent, Dojo   | [EMPTY - NO PRIOR WORK]|
-| Memory Poisoning (Adv) | RAG-Poison        | MINJA, AgentPoison | [EMPTY - NO PRIOR WORK]|
-| Invariant Defense      | None              | Fides (IFC)        | AgentPOI-Clinical (C1) |
-| State-Based Oracle     | N/A (Text Match)  | Dojo (JSON State)  | AgentPOI-Clinical (C2) |
-+------------------------+-------------------+--------------------+------------------------+
-```
+All five contributions are confirmed novel against the verified state of the art. The literature
+establishes (a) that the attack class is real and severe, (b) that existing defences are
+probabilistic or permissive-by-construction, and (c) that no prior work provides a deterministic,
+provenance-gated, repository-anchored invariant check on the code-mutation sink.
 
-Every claim is grounded in verified literature citations. All three contributions (C1, C2, C3) are verified as distinct, novel, and ready for implementation.
+**Phase 0 Gate Status: PASSED.** Proceeding to Phase 1 implementation on branch `codebleak`.
+
+---
+
+## 5. Verification Method for This Gate
+
+- Every arXiv identifier above was returned by a live search during this sweep.
+- CVE identifiers and the IDEsaster campaign are drawn from the Cloud Security Alliance research
+  note *"AI Coding Assistants as Attack Surface: Code, Skills, and Secrets"* (2026-04-03), which
+  enumerates the CVE table reproduced in §2.1.
+- ClawHavoc / ToxicSkills figures are drawn from Koi Security, Snyk, CrowdStrike and Antiy CERT
+  reporting as summarised in the same CSA note.
+- Third-party quantitative claims (e.g. AIShellJack ASR, ShieldMCP reductions) are **cited, not
+  reproduced**; AgentPOI-SDE reports only metrics it computes itself, dynamically, per
+  `AGENTS.md` Rule 4.
