@@ -50,14 +50,33 @@ from agentpoi_sde.exceptions import (
 
 __version__ = "0.1.0"
 
+from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
 from agentpoi_sde.cli import main
 from agentpoi_sde.facade import DevGuard, MutationVerdict
+from agentpoi_sde.graph.arch_ledger import ArchConnection, ArchitecturalLedger
+from agentpoi_sde.graph.merkle_graph import MerkleKnowledgeGraph
+from agentpoi_sde.harvester.component_harvester import (
+    ComponentHarvester,
+    HarvestedComponent,
+    LocalComponentRegistry,
+)
+from agentpoi_sde.harvester.program_slicer import ProgramSlicer, SliceResult
 from agentpoi_sde.provenance.code_provenance import ProvenanceDAG, ProvenanceNode
+from agentpoi_sde.sandbox.isolated_sandbox import (
+    IsolatedConfigurationSandbox,
+    SandboxExecutionResult,
+)
 from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
 
 __all__ = [
     "DevGuard",
     "MutationVerdict",
+    "WorkingPartAnchor",
+    "IsolatedConfigurationSandbox",
+    "ComponentHarvester",
+    "ProgramSlicer",
+    "MerkleKnowledgeGraph",
+    "ArchitecturalLedger",
     "GuardPolicy",
     "CodeMutation",
     "MutationOp",

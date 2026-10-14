@@ -11,6 +11,8 @@ from typing import Dict, List, Optional, Set
 from agentpoi_sde.anchor.policy_registry import default_policy, forbidden_edge_reason
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.anchor.symbol_index import SymbolIndex, find_cycles
+from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
+from agentpoi_sde.capability.capability_scope import CapabilityScope
 from agentpoi_sde.config_loader import get_egress_allowlist, get_invariant_config
 from agentpoi_sde.delta.mutation_delta import is_weakening
 from agentpoi_sde.domain import (
@@ -20,6 +22,10 @@ from agentpoi_sde.domain import (
     MutationDelta,
     MutationOp,
 )
+from agentpoi_sde.schema.backend_extractor import BackendRouteExtractor
+from agentpoi_sde.schema.contract_model import BackendRoute, FrontendCall
+from agentpoi_sde.schema.cross_stack_verifier import CrossStackVerifier
+from agentpoi_sde.schema.frontend_extractor import FrontendCallExtractor
 
 
 class RepoInvariantVerifier:
@@ -30,6 +36,7 @@ class RepoInvariantVerifier:
         anchor: RepositoryStateAnchor,
         egress_allowlist: Optional[List[str]] = None,
         invariant_config: Optional[Dict[str, bool]] = None,
+        working_anchor: Optional[WorkingPartAnchor] = None,
     ) -> None:
         self.anchor = anchor
         self.policy: ArchitecturePolicy = anchor.policy or default_policy()
@@ -37,6 +44,7 @@ class RepoInvariantVerifier:
         self.enabled: Dict[str, bool] = dict(get_invariant_config())
         if invariant_config:
             self.enabled.update(invariant_config)
+        self.working_anchor = working_anchor or getattr(anchor, "working_anchor", None)
 
     def _on(self, key: str) -> bool:
         """Return whether an invariant is enabled (defaults to enabled when unspecified)."""
@@ -167,6 +175,56 @@ class RepoInvariantVerifier:
             ]
         return []
 
+    # -- I8 cross-stack schema consensus ------------------------------------------
+    def check_cross_stack(self, delta: MutationDelta) -> List[InvariantViolation]:
+        """A mutation must maintain contract consensus between frontend and backend."""
+        projected = self._projected_files(delta)
+        f_extractor = FrontendCallExtractor()
+        b_extractor = BackendRouteExtractor()
+
+        calls: List[FrontendCall] = []
+        routes: List[BackendRoute] = []
+
+        frontend_exts = (".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte", ".html")
+        for path, code in projected.items():
+            if any(path.endswith(ext) for ext in frontend_exts):
+                calls.extend(f_extractor.extract_calls(path, code))
+            elif path.endswith(".py"):
+                routes.extend(b_extractor.extract_routes(path, code))
+
+        internal_calls = [
+            c for c in calls
+            if not (c.raw_path.startswith("http://") or c.raw_path.startswith("https://"))
+        ]
+
+        if not internal_calls:
+            return []
+
+        result = CrossStackVerifier().verify(internal_calls, routes)
+        if not result.is_consistent:
+            return [InvariantViolation("I8", f"{v.code}: {v.message}") for v in result.violations]
+        return []
+
+    # -- I9 working part immutability ---------------------------------------------
+    def check_working_parts(
+        self,
+        delta: MutationDelta,
+        capability: Optional[CapabilityScope] = None,
+    ) -> List[InvariantViolation]:
+        """A mutation may not touch protected working files without explicit capability."""
+        if not self.working_anchor:
+            return []
+
+        if not self.working_anchor.can_mutate_file(delta.path, capability):
+            return [
+                InvariantViolation(
+                    "I9",
+                    f"mutation path '{delta.path}' touches protected working component without "
+                    f"explicit capability scope grant (Invariant I9: Working Part Immutability).",
+                )
+            ]
+        return []
+
     # -- design gates (D1) --------------------------------------------------------
     def check_design_decisions(self, delta: MutationDelta) -> List[InvariantViolation]:
         """A mutation must not contradict an executable design decision."""
@@ -192,7 +250,12 @@ class RepoInvariantVerifier:
         violations.extend(self.check_policy_files(intent, delta))
         return violations
 
-    def verify(self, intent: IntentContract, delta: MutationDelta) -> List[InvariantViolation]:
+    def verify(
+        self,
+        intent: IntentContract,
+        delta: MutationDelta,
+        capability: Optional[CapabilityScope] = None,
+    ) -> List[InvariantViolation]:
         """Run every enabled invariant plus the design gates; return all violations found.
 
         Each invariant is individually governed by ``invariants.enforce_*`` configuration;
@@ -215,5 +278,9 @@ class RepoInvariantVerifier:
             violations.extend(self.check_dependency_provenance(delta))
         if self._on("enforce_syntax_integrity"):
             violations.extend(self.check_syntax_integrity(delta))
+        if self._on("enforce_cross_stack"):
+            violations.extend(self.check_cross_stack(delta))
+        if self._on("enforce_working_parts"):
+            violations.extend(self.check_working_parts(delta, capability=capability))
         violations.extend(self.check_design_decisions(delta))
         return violations

@@ -274,3 +274,60 @@ def test_cli_benchmark_json_and_output_file(tmp_path, capsys):
     data = json.loads(content)
     assert "defended" in data
     assert data["defended"]["emar"] == 0.0
+
+
+def test_cli_graph(tmp_path, capsys):
+    """Verify CLI graph command indexes Python files and produces Merkle root."""
+    proj = tmp_path / "graph_repo"
+    proj.mkdir()
+    (proj / "service.py").write_text("def run():\n    return 42\n", encoding="utf-8")
+
+    exit_code = main(["graph", str(proj)])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Merkle Root" in captured.out
+    assert "Indexed Nodes" in captured.out
+
+
+def test_cli_cross_stack(tmp_path, capsys):
+    """Verify CLI cross-stack audit checks frontend and backend contracts."""
+    proj = tmp_path / "fullstack"
+    proj.mkdir()
+    (proj / "api.ts").write_text("axios.get('/api/users');\n", encoding="utf-8")
+    (proj / "server.py").write_text(
+        "from fastapi import APIRouter\nrouter = APIRouter()\n@router.get('/api/users')\ndef get_users(): pass\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["cross-stack", str(proj)])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "PASS" in captured.out
+
+
+def test_cli_harvest(tmp_path, capsys):
+    """Verify CLI harvest command safely extracts and sanitizes symbol."""
+    source_file = tmp_path / "math_utils.py"
+    source_file.write_text(
+        "def helper(x): return x * 2\ndef compute(y): return helper(y) + 1\ndef unused(): pass\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(["harvest", str(source_file), "compute"])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "def compute" in captured.out
+    assert "def helper" in captured.out
+    assert "unused" not in captured.out
+
+
+def test_cli_sandbox(tmp_path, capsys):
+    """Verify CLI sandbox runs tests in isolated scratch environment."""
+    test_file = tmp_path / "test_example.py"
+    test_file.write_text("def test_ok():\n    assert 1 + 1 == 2\n", encoding="utf-8")
+
+    exit_code = main(["sandbox", str(test_file)])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "passed" in captured.out.lower()
+

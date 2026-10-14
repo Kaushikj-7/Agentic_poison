@@ -38,7 +38,19 @@ from agentpoi_sde.exceptions import (
     TestIntegrityError,
     UntrustedProvenanceError,
 )
+from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
+from agentpoi_sde.graph.arch_ledger import ArchConnection, ArchitecturalLedger
+from agentpoi_sde.graph.merkle_graph import MerkleKnowledgeGraph
+from agentpoi_sde.harvester.component_harvester import (
+    ComponentHarvester,
+    HarvestedComponent,
+    LocalComponentRegistry,
+)
 from agentpoi_sde.provenance.code_provenance import ProvenanceDAG
+from agentpoi_sde.sandbox.isolated_sandbox import (
+    IsolatedConfigurationSandbox,
+    SandboxExecutionResult,
+)
 from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
 
 
@@ -103,6 +115,7 @@ class DevGuard:
         egress_allowlist: Optional[List[str]] = None,
         capability: Optional[CapabilityScope] = None,
         invariant_config: Optional[Dict[str, bool]] = None,
+        working_anchor: Optional[WorkingPartAnchor] = None,
         raise_on_violation: bool = False,
     ) -> None:
         self.policy = GuardPolicy(policy)
@@ -115,10 +128,16 @@ class DevGuard:
             design_decisions=design_decisions,
         )
         self.workspace: Dict[str, str] = self.anchor.to_files()
+        self.working_anchor = working_anchor or WorkingPartAnchor()
+        self.merkle_graph = MerkleKnowledgeGraph()
+        self.arch_ledger = ArchitecturalLedger()
+        self.sandbox = IsolatedConfigurationSandbox()
+        self.harvester = ComponentHarvester()
         self.verifier = RepoInvariantVerifier(
             self.anchor,
             egress_allowlist=egress_allowlist,
             invariant_config=self._invariant_config,
+            working_anchor=self.working_anchor,
         )
         self.delta_extractor = MutationDeltaExtractor(self.anchor.policy)
         self.provenance = ProvenanceDAG()
@@ -291,7 +310,7 @@ class DevGuard:
         provenance_ok, provenance_msgs = self.provenance.verify_mutation_authority(mutation_node.node_id)
         provenance_violations = [self._split_provenance(msg) for msg in provenance_msgs]
         capability_violations = self.capability.validate(delta) if self.capability else []
-        invariant_violations = list(self.verifier.verify(intent, delta))
+        invariant_violations = list(self.verifier.verify(intent, delta, capability=self.capability))
         if self.verifier._on("enforce_policy_files"):
             injection_hits = self.screen_mutation_content(delta.new_content)
             if injection_hits:
@@ -328,6 +347,14 @@ class DevGuard:
         if result.is_executable:
             self._apply(delta)
             self._record(delta, intent_id, nonce, "approved")
+            self.arch_ledger.record_decision(
+                feature=f"Mutation {delta.path} ({delta.op.value})",
+                how=f"Applied delta to {delta.path}",
+                why=f"Intent: {intent_id}",
+                connections=[],
+                elements_used=[delta.path],
+                graph_root=self.anchor.tree_oid(),
+            )
             verdict = MutationVerdict(
                 is_applied=True,
                 status="APPROVED",
@@ -457,6 +484,50 @@ class DevGuard:
             self.anchor,
             egress_allowlist=self.verifier.egress_allowlist,
             invariant_config=self._invariant_config,
+            working_anchor=self.working_anchor,
         )
         self.delta_extractor = MutationDeltaExtractor(self.anchor.policy)
         return self.anchor.tree_oid()
+
+    # -- working parts & sandbox --------------------------------------------------
+    def register_working_file(self, file_path: str, content_hash: str = "", description: str = "") -> None:
+        """Register a verified working file to protect it under Invariant I9."""
+        actual_hash = content_hash or self.anchor.file_hash(file_path)
+        self.working_anchor.register_working_file(file_path, actual_hash, description)
+
+    def is_working_file(self, file_path: str) -> bool:
+        """Check if file is protected as an immutable working part."""
+        return self.working_anchor.is_working_file(file_path)
+
+    def register_regression_test(self, test_path: str) -> None:
+        """Register a test file as an immutable regression gate."""
+        self.working_anchor.register_regression_test(test_path)
+
+    def run_sandbox_tests(
+        self,
+        feature_name: str,
+        test_files: Dict[str, str],
+        source_files: Optional[Dict[str, str]] = None,
+    ) -> SandboxExecutionResult:
+        """Run tests in clean isolated configuration sandbox."""
+        return self.sandbox.run_test_in_isolation(
+            feature_name=feature_name,
+            test_files=test_files,
+            source_files=source_files or {},
+        )
+
+    # -- component harvesting -----------------------------------------------------
+    def harvest_component(
+        self,
+        repo_name: str,
+        file_path: str,
+        target_symbol: str,
+        source_code: Optional[str] = None,
+    ) -> HarvestedComponent:
+        """Safely slice and sanitize open-source component for project reuse."""
+        return self.harvester.harvest(
+            repo_name=repo_name,
+            file_path=file_path,
+            target_symbol=target_symbol,
+            source_code=source_code,
+        )

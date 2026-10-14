@@ -14,6 +14,7 @@ import sys
 from typing import List, Optional, Tuple
 
 __version__ = "0.1.0"
+from pathlib import Path
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.delta.diff_parser import (
     MalformedDiffError,
@@ -23,6 +24,13 @@ from agentpoi_sde.delta.diff_parser import (
 from agentpoi_sde.domain import CodeMutation, GuardPolicy
 from agentpoi_sde.eval.benchmark import run_benchmark
 from agentpoi_sde.facade import DevGuard
+from agentpoi_sde.graph.graph_indexer import GraphIndexer
+from agentpoi_sde.graph.merkle_graph import MerkleGraph
+from agentpoi_sde.harvester.component_harvester import ComponentHarvester
+from agentpoi_sde.sandbox.isolated_sandbox import IsolatedConfigurationSandbox
+from agentpoi_sde.schema.backend_extractor import BackendRouteExtractor
+from agentpoi_sde.schema.cross_stack_verifier import CrossStackVerifier
+from agentpoi_sde.schema.frontend_extractor import FrontendCallExtractor
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -133,6 +141,38 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional destination file path for benchmark report",
     )
+
+    # 4. graph
+    p_graph = subparsers.add_parser(
+        "graph",
+        help="Compute Merkle knowledge graph root and index repository symbols",
+    )
+    p_graph.add_argument("path", nargs="?", default=".", help="Target directory (default: .)")
+    p_graph.add_argument("--json", action="store_true", help="Output graph metadata as JSON")
+
+    # 5. cross-stack
+    p_cs = subparsers.add_parser(
+        "cross-stack",
+        help="Audit cross-stack schema consensus between frontend and backend",
+    )
+    p_cs.add_argument("path", nargs="?", default=".", help="Target directory (default: .)")
+    p_cs.add_argument("--json", action="store_true", help="Output audit results as JSON")
+
+    # 6. harvest
+    p_harv = subparsers.add_parser(
+        "harvest",
+        help="Safely slice and sanitize open-source component symbol from file",
+    )
+    p_harv.add_argument("file_path", help="Path to component source file")
+    p_harv.add_argument("symbol", help="Target symbol to slice and sanitize")
+    p_harv.add_argument("-o", "--output", default=None, help="Output destination file")
+
+    # 7. sandbox
+    p_sand = subparsers.add_parser(
+        "sandbox",
+        help="Execute test in isolated scratch configuration sandbox",
+    )
+    p_sand.add_argument("test_file", help="Path to test file to execute in sandbox")
 
     return parser
 
@@ -376,6 +416,135 @@ def handle_benchmark(args: argparse.Namespace) -> int:
     return 0 if report.defended.emar == 0.0 else 1
 
 
+def handle_graph(args: argparse.Namespace) -> int:
+    """Handle the 'graph' subcommand."""
+    target = Path(args.path).resolve()
+    if not target.is_dir():
+        sys.stderr.write(f"Error: Target directory does not exist: {target}\n")
+        return 2
+
+    indexer = GraphIndexer()
+    graph = MerkleGraph()
+    py_files = sorted(target.rglob("*.py"))
+    for pf in py_files:
+        try:
+            rel = str(pf.relative_to(target)).replace("\\", "/")
+            code = pf.read_text(encoding="utf-8", errors="ignore")
+            indexer.index_source(graph, rel, code)
+        except Exception:
+            continue
+
+    root = graph.compute_merkle_root()
+    if args.json:
+        payload = {
+            "root_dir": str(target).replace("\\", "/"),
+            "merkle_root": root,
+            "node_count": graph.node_count,
+            "edge_count": graph.edge_count,
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    print("==================================================")
+    print("AgentPOI-SDE: Merkle Knowledge Graph")
+    print("==================================================")
+    print(f"Directory:    {target}")
+    print(f"Merkle Root:  {root}")
+    print(f"Indexed Nodes: {graph.node_count}")
+    print(f"Graph Edges:  {graph.edge_count}")
+    return 0
+
+
+def handle_cross_stack(args: argparse.Namespace) -> int:
+    """Handle the 'cross-stack' subcommand."""
+    target = Path(args.path).resolve()
+    if not target.is_dir():
+        sys.stderr.write(f"Error: Target directory does not exist: {target}\n")
+        return 2
+
+    f_ext = FrontendCallExtractor()
+    b_ext = BackendRouteExtractor()
+    calls = []
+    routes = []
+    frontend_exts = (".js", ".jsx", ".ts", ".tsx", ".vue", ".html")
+    for f in target.rglob("*"):
+        if f.is_file():
+            rel = str(f.relative_to(target)).replace("\\", "/")
+            if any(rel.endswith(ext) for ext in frontend_exts):
+                try:
+                    calls.extend(f_ext.extract_calls(rel, f.read_text(encoding="utf-8", errors="ignore")))
+                except Exception:
+                    pass
+            elif rel.endswith(".py"):
+                try:
+                    routes.extend(b_ext.extract_routes(rel, f.read_text(encoding="utf-8", errors="ignore")))
+                except Exception:
+                    pass
+
+    internal_calls = [c for c in calls if not (c.raw_path.startswith("http://") or c.raw_path.startswith("https://"))]
+    result = CrossStackVerifier().verify(internal_calls, routes)
+
+    if args.json:
+        payload = {
+            "is_consistent": result.is_consistent,
+            "frontend_calls": len(internal_calls),
+            "backend_routes": len(routes),
+            "violations": [{"code": v.code, "message": v.message} for v in result.violations],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0 if result.is_consistent else 1
+
+    print("==================================================")
+    print("AgentPOI-SDE: Cross-Stack Consensus Audit")
+    print("==================================================")
+    print(f"Frontend Calls: {len(internal_calls)}")
+    print(f"Backend Routes: {len(routes)}")
+    print(f"Consensus:      {'PASS' if result.is_consistent else 'DRIFT DETECTED'}")
+    for v in result.violations:
+        print(f"  [{v.code}] {v.message}")
+    return 0 if result.is_consistent else 1
+
+
+def handle_harvest(args: argparse.Namespace) -> int:
+    """Handle the 'harvest' subcommand."""
+    source_file = Path(args.file_path).resolve()
+    if not source_file.is_file():
+        sys.stderr.write(f"Error: Source file does not exist: {source_file}\n")
+        return 2
+
+    code = source_file.read_text(encoding="utf-8", errors="ignore")
+    harvester = ComponentHarvester()
+    comp = harvester.harvest("local", str(source_file.name), args.symbol, source_code=code)
+
+    if not comp.is_approved:
+        sys.stderr.write(f"Harvest rejected: {comp.error}\n")
+        return 1
+
+    if args.output:
+        Path(args.output).write_text(comp.sliced_code, encoding="utf-8")
+        print(f"Saved approved component to {args.output}")
+    else:
+        print(comp.sliced_code)
+    return 0
+
+
+def handle_sandbox(args: argparse.Namespace) -> int:
+    """Handle the 'sandbox' subcommand."""
+    test_path = Path(args.test_file).resolve()
+    if not test_path.is_file():
+        sys.stderr.write(f"Error: Test file does not exist: {test_path}\n")
+        return 2
+
+    sandbox = IsolatedConfigurationSandbox()
+    code = test_path.read_text(encoding="utf-8", errors="ignore")
+    res = sandbox.run_test_in_isolation(
+        feature_name=test_path.stem, test_files={test_path.name: code}, source_files={}
+    )
+
+    print(res.output)
+    return res.exit_code
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Main entry point for agentpoi-sde CLI."""
     if hasattr(sys.stdout, "reconfigure"):
@@ -392,6 +561,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         return handle_check_diff(args)
     if args.subcommand == "benchmark":
         return handle_benchmark(args)
+    if args.subcommand == "graph":
+        return handle_graph(args)
+    if args.subcommand == "cross-stack":
+        return handle_cross_stack(args)
+    if args.subcommand == "harvest":
+        return handle_harvest(args)
+    if args.subcommand == "sandbox":
+        return handle_sandbox(args)
 
     return 2
 

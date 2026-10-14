@@ -27,6 +27,8 @@ DEFAULT_SDE_CONFIG: Dict[str, Any] = {
         "enforce_blast_radius": True,
         "enforce_dependency_provenance": True,
         "enforce_syntax_integrity": True,
+        "enforce_cross_stack": True,
+        "enforce_working_parts": True,
     },
     "egress_allowlist": [
         "https://github.com/",
