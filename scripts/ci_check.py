@@ -79,12 +79,15 @@ def run_unit_tests() -> Tuple[bool, str]:
         pp_entries.append(current_pp)
     env["PYTHONPATH"] = os.pathsep.join(pp_entries)
 
+    # The opaque-box end-to-end acceptance suite (tests/e2e) is deliberately NOT ignored:
+    # it is the acceptance evidence for the SDE phases, and skipping it here previously let the
+    # gate report a pass without exercising it. Only the four modules below are excluded, and
+    # each is excluded for a stated reason (live external probe or a long randomised experiment).
     ignore_flags = [
-        "--ignore=tests/test_worktree_runner.py",
-        "--ignore=tests/test_advanced_experiments.py",
-        "--ignore=tests/test_deepteam_redteam.py",
-        "--ignore=tests/test_gemini_probe.py",
-        "--ignore=tests/e2e",
+        "--ignore=tests/test_worktree_runner.py",      # spawns git worktrees; slow, host-coupled
+        "--ignore=tests/test_advanced_experiments.py",  # long randomised ablation sweep
+        "--ignore=tests/test_deepteam_redteam.py",      # red-team battery, run separately
+        "--ignore=tests/test_gemini_probe.py",          # requires a live API key
     ]
 
     cmd = [
@@ -147,6 +150,30 @@ def run_sde_benchmark() -> Tuple[bool, float, float, float, float]:
 def run_benchmark_invariant() -> Tuple[bool, float, float]:
     """Run financial benchmark invariant check (backward compatibility alias)."""
     return run_financial_benchmark()
+
+
+def check_docs_metrics_sync() -> Tuple[bool, str]:
+    """Verify the published SDE metrics still match a live benchmark execution.
+
+    Guards ``AGENTS.md`` Rule 4 (no hardcoded results): the README and the architecture
+    specification are generated from a live run, so a stale or invented metric fails the gate
+    instead of shipping.
+    """
+    script = os.path.join(workspace_root, "scripts", "render_sde_metrics.py")
+    if not os.path.exists(script):
+        return False, "RENDERER MISSING"
+    try:
+        res = subprocess.run(
+            [sys.executable, script, "--check"],
+            cwd=workspace_root,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        return False, f"DOCS SYNC ERROR: {exc}"
+    if res.returncode == 0:
+        return True, "IN SYNC"
+    return False, "STALE - run: python scripts/render_sde_metrics.py"
 
 
 def check_working_tree() -> Tuple[bool, str]:
@@ -254,20 +281,26 @@ def main():
         all_passed = False
     print(f"[*] SDE Benchmark:       {'PASS' if sde_ok else 'FAIL'} (EMAR={emar}%, LTSR={ltsr}%, AVR={avr}%, SLR={slr}%)")
 
-    # 6. Clean Working Tree Gate
+    # 6. Documentation Metrics Sync Gate (no hardcoded results)
+    docs_ok, docs_status = check_docs_metrics_sync()
+    if not docs_ok:
+        all_passed = False
+    print(f"[*] Docs Metrics Sync:   {docs_status}")
+
+    # 7. Clean Working Tree Gate
     allow_dirty = "--allow-dirty" in sys.argv
     tree_ok, tree_status = check_working_tree()
     if not tree_ok and not allow_dirty:
         all_passed = False
     print(f"[*] Working Tree:        {'CLEAN' if tree_ok else f'DIRTY ({tree_status})' + (' [BYPASSED --allow-dirty]' if allow_dirty else '')}")
 
-    # 7. Ledger Gate
+    # 8. Ledger Gate
     ledger_ok, ledger_status = check_ledger()
     if not ledger_ok:
         all_passed = False
     print(f"[*] Project Ledger:      {ledger_status}")
 
-    # 8. Code Principles Gate
+    # 9. Code Principles Gate
     principles_ok, principles_status = check_code_principles()
     if not principles_ok:
         all_passed = False
@@ -280,6 +313,7 @@ def main():
     print(f"Tests:    {test_summary if tests_ok else 'FAIL'}")
     print(f"Security: {'OK' if secrets_ok else 'FAIL'}")
     print(f"Principles: {'OK' if principles_ok else 'FAIL'}")
+    print(f"Docs:     {docs_status}")
     print(f"Ledger:   {'UPDATED' if ledger_ok else 'FAIL'}")
     print(f"Ready for PR: {'YES' if all_passed else 'NO'}")
     print("=" * 65)

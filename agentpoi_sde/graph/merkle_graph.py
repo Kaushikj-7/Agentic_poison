@@ -196,9 +196,11 @@ class MerkleGraph:
             siblings.append((direction, sibling_hash))
 
             for i in range(0, len(current_layer), 2):
-                l = current_layer[i]
-                r = current_layer[i + 1] if i + 1 < len(current_layer) else l
-                next_layer.append(_sha256(f"{l}:{r}"))
+                left_hash = current_layer[i]
+                right_hash = (
+                    current_layer[i + 1] if i + 1 < len(current_layer) else left_hash
+                )
+                next_layer.append(_sha256(f"{left_hash}:{right_hash}"))
             current_layer = next_layer
             idx = idx // 2
 

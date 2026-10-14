@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass, field
-from typing import List, Set
+from typing import List, Optional, Set
 
 from agentpoi_sde.anchor.policy_registry import INJECTION_MARKERS, SECRET_PATTERNS
 

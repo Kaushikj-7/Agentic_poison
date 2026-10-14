@@ -10,18 +10,16 @@ Verifies:
 - End-to-end CrossStackVerifier approval of consistent full-stack mutations and rejection of drift.
 """
 
-import pytest
 
+from agentpoi_sde.schema.backend_extractor import BackendRouteExtractor
 from agentpoi_sde.schema.contract_model import (
     BackendRoute,
     EndpointContract,
     FrontendCall,
     HTTPMethod,
-    SchemaField,
 )
+from agentpoi_sde.schema.cross_stack_verifier import CrossStackVerifier
 from agentpoi_sde.schema.frontend_extractor import FrontendCallExtractor
-from agentpoi_sde.schema.backend_extractor import BackendRouteExtractor
-from agentpoi_sde.schema.cross_stack_verifier import CrossStackVerifier, CrossStackResult
 
 
 class TestCrossStackContractModels:
@@ -148,24 +146,23 @@ class TestCrossStackVerifier:
         });
         """
         backend_code = """
+class DisburseRequest(BaseModel):
+    payee_id: str
+    amount: float
+    currency: str
+
+
 @router.post("/api/v1/disburse")
-def disburse(req: DisburseRequest):  # requires payee_id, amount, currency
+def disburse(req: DisburseRequest):
     pass
         """
         f_extractor = FrontendCallExtractor()
         b_extractor = BackendRouteExtractor()
 
         calls = f_extractor.extract_calls("app.ts", frontend_code)
-        # Mock backend routes with expected fields
-        routes = [
-            BackendRoute(
-                method=HTTPMethod.POST,
-                path_template="/api/v1/disburse",
-                required_fields=["payee_id", "amount", "currency"],
-                file_path="router.py",
-                line=1,
-            )
-        ]
+        routes = b_extractor.extract_routes("router.py", backend_code)
+        assert len(routes) == 1, "the backend extractor must resolve the declared route"
+        assert routes[0].required_fields == ["payee_id", "amount", "currency"]
 
         verifier = CrossStackVerifier()
         result = verifier.verify(calls, routes)

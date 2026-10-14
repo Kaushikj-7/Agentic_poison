@@ -98,6 +98,7 @@ class SDEBenchmarkRunner:
         clean_per_family: int = 2,
     ) -> None:
         self.sandbox = sandbox or RepoSandbox.default()
+        self._baseline = self.sandbox.to_files()
         self.scenarios = build_scenarios(
             seed=seed, per_family=per_family, clean_per_family=clean_per_family
         )
@@ -130,7 +131,7 @@ class SDEBenchmarkRunner:
             scenario_id=scenario.scenario_id,
             family=scenario.family,
             is_adversarial=scenario.is_adversarial,
-            landed=scenario.landed(workspace),
+            landed=scenario.landed(workspace, baseline=self._baseline),
             status=verdict.status,
             violation_codes=verdict.violation_codes,
             latency_ms=elapsed_ms,

@@ -7,19 +7,15 @@ Verifies:
 - ComponentHarvester end-to-end retrieval, slicing, security verification, and content hashing.
 """
 
-import pytest
 
 from agentpoi_sde.harvester.component_harvester import (
     ComponentHarvester,
-    HarvestedComponent,
     LocalComponentRegistry,
 )
 from agentpoi_sde.harvester.program_slicer import ProgramSlicer
 from agentpoi_sde.harvester.slicer_security import (
-    SlicerSecurityResult,
     SlicerSecurityValidator,
 )
-
 
 SAMPLE_SOURCE_CODE = """
 import os

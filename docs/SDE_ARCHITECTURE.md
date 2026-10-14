@@ -1,9 +1,14 @@
-# AgentPOI-SDE — Architecture Specification
+# AgentPOI-SDE — Repository Invariant Verification (RIV) Architecture
 
+**Package:** `agentpoi_sde` — the software-engineering application of AgentPOI.
 **Platform:** AgentPOI-SDE (Software Development Engineering)
 **Branch:** `codebleak`
-**Status:** Phase 1 (core invariant engine + benchmark) — this document is the build contract.
+**Status:** implemented — core invariant engine, dynamic benchmark, agentic plane, CLI, Merkle
+knowledge graph, cross-stack schema consensus, working-part immutability and the safe component
+harvester all ship in `agentpoi_sde` and are exercised by the test suite and pre-flight gate.
 **Parent platform:** `agent_poi` (CIV/DSEC financial defence) — principles carried over per `AGENTS.md`.
+**Companion specification:** [`CRYPTOGRAPHIC_GRAPH_ARCHITECTURE.md`](CRYPTOGRAPHIC_GRAPH_ARCHITECTURE.md)
+(Subsystems G/C/W/H and invariants I8–I9).
 
 ---
 
@@ -45,6 +50,8 @@ authorised, in-scope, non-weakening, non-leaking, architecturally legal, and tra
 | `Δ(edit)` | Mutation Delta | Typed, normalised description of one code mutation |
 | `𝒫` | Provenance Anchor | SHA-256 hash-chained lineage of contributing context |
 | `κ` | Capability Scope | Deterministic grant bounding paths/tools/egress |
+| `𝒢_merkle` | Merkle Knowledge Graph | Content-addressed graph of files, symbols, endpoints, schemas, ADRs and builds, with a recomputable Merkle root |
+| `ℒ` | Architectural Ledger | Hash-chained block record of what was built, how, why, and what it connects to |
 
 ---
 
@@ -66,8 +73,8 @@ flowchart TD
     subgraph T3b["Tier 3 — Mutation Delta Extraction"]
         MD["MutationDeltaExtractor Δ(edit)<br/>path · symbol · op · patch_hash<br/>imports_added · writes · secrets"]
     end
-    subgraph T4b["Tier 4 — Invariant Verification (the seven gates)"]
-        IV["RepoInvariantVerifier<br/>policy-file · test-integrity · secrets/egress<br/>architecture · blast-radius · dependency provenance<br/>syntax integrity"]
+    subgraph T4b["Tier 4 — Invariant Verification (the nine gates)"]
+        IV["RepoInvariantVerifier<br/>policy-file · test-integrity · secrets/egress<br/>architecture · blast-radius · dependency provenance<br/>syntax integrity · cross-stack schema · working parts<br/>+ design gate D1"]
     end
     subgraph T5b["Tier 5 — Provenance & Capability"]
         PV["ProvenanceGate 𝒫 ∩ CapabilityGate κ ∩ Freshness"]
@@ -87,7 +94,7 @@ flowchart TD
 
 ---
 
-## 3. The Seven Sink Invariants (each maps to a documented, unmitigated attack class)
+## 3. The Nine Sink Invariants (each maps to a documented, unmitigated attack class)
 
 | Invariant | Rule | Attack class it closes |
 |---|---|---|
@@ -98,9 +105,16 @@ flowchart TD
 | **I5 Blast-Radius / Scope** | Mutation paths ∩ declared ℐ scope must cover all mutation paths (no covert side-writes). | RoguePilot-style scope expansion |
 | **I6 Dependency Provenance** | New imports must resolve to allow-listed or anchor-present dependencies; T2-supplied installs are refused. | Supply-chain injection via new import |
 | **I7 Syntax Integrity** | A mutation must leave every touched Python file parsable (`ast.parse`); unparsable output is refused, never silently skipped. | Fail-open parsers / smuggled malformed code |
+| **I8 Cross-Stack Schema Consensus** | Every frontend API invocation must resolve to a declared backend route with the same HTTP verb and a payload supplying the route's required fields (`I8:ENDPOINT_NOT_FOUND`, `I8:METHOD_MISMATCH`, `I8:MISSING_REQUIRED_FIELD`). | Hallucinated/renamed endpoints, verb drift, silently missing payload fields |
+| **I9 Working-Part Immutability** | A file registered in the working-part anchor may only be mutated when the active capability scope explicitly grants it. Registration is opt-in per task (`DevGuard.register_working_file`). | Regression: an agent rewriting a known-good module while adding a feature |
 
 Enforced jointly with **𝒫** (provenance ancestry), **κ** (capability scope) and **freshness**
 (non-replay idempotency) before the sink fires.
+
+The **I9 regression-run** capability is deliberately *not* automatic: `DevGuard.run_sandbox_tests()`
+executes the registered regression suites in an isolated temporary configuration when the caller
+asks for it, and reports the result. Only the path/scope half of I9 is enforced on every mutation;
+the evidence half is an explicit API call, so this document does not claim it is automatic.
 
 ![AgentPOI-SDE Publication Architecture Diagram](sde_architecture_diagram.png)
 
@@ -118,8 +132,20 @@ Enforced jointly with **𝒫** (provenance ancestry), **κ** (capability scope) 
 | Delta | `delta/diff_parser.py` | Fail-closed unified diff/patch parser with path containment |
 | Provenance | `provenance/code_provenance.py` | `ProvenanceDAG` 𝒫 over `agent_poi.core.taint_tracker.AuthGraphDAG` |
 | Capability | `capability/capability_scope.py` | `CapabilityScope` κ tokens + freshness nonce store |
-| Verify | `verify/invariant_verifier.py` | `RepoInvariantVerifier` — the seven gates (I1–I7) + design gate D1 |
-| Agent | `agent/llm_provider.py` | Pluggable provider (OpenRouter-style) + deterministic mock |
+| Verify | `verify/invariant_verifier.py` | `RepoInvariantVerifier` — the nine gates (I1–I9) + design gate D1 |
+| Anchor | `anchor/working_part_anchor.py` | `WorkingPartAnchor` — registry of verified working parts / regression suites (I9) |
+| Graph | `graph/merkle_graph.py` | `MerkleKnowledgeGraph` — content-addressed nodes/edges with a recomputable Merkle root |
+| Graph | `graph/arch_ledger.py` | `ArchitecturalLedger` — hash-chained record of what/how/why was built and connected |
+| Graph | `graph/graph_indexer.py` | AST scanner lifting files, symbols, imports and routes into graph nodes |
+| Schema | `schema/contract_model.py` | Universal endpoint/schema contract models + cross-dialect route normalisation |
+| Schema | `schema/frontend_extractor.py` | AST extraction of frontend `fetch`/`axios`/client calls and payload keys |
+| Schema | `schema/backend_extractor.py` | AST extraction of FastAPI/Flask/Express routes and required schema fields |
+| Schema | `schema/cross_stack_verifier.py` | Contract consensus sink enforcing invariant I8 |
+| Harvester | `harvester/component_harvester.py` | Open-source component lookup and pull (registry-driven, no network calls in tests) |
+| Harvester | `harvester/program_slicer.py` | Minimal transitive AST slice of a requested symbol |
+| Harvester | `harvester/slicer_security.py` | Sanitises harvested slices for credentials, alias-evaded imports and shell/network primitives |
+| Sandbox | `sandbox/isolated_sandbox.py` | `IsolatedConfigurationSandbox` — runs suites in a throwaway configuration |
+| Agent | `agent/llm_provider.py` | Pluggable provider (OpenRouter-style) + deterministic provider |
 | Agent | `agent/coding_agent.py` | Agent loop: plan → propose → guard → sink |
 | Agent | `agent/design_planner.py` | System-design plane: module graph + ADR synthesis |
 | Eval | `eval/repo_sandbox.py` | Deterministic in-memory repository simulation |
@@ -138,10 +164,15 @@ Enforced jointly with **𝒫** (provenance ancestry), **κ** (capability scope) 
 |---|---|---|
 | **P0** | Novelty-gap analysis (`docs/NOVELTY_GAP.md`) | Literature verified — **PASSED** |
 | **P1** | Anchor ℛ₀ + Δ(edit) + seven invariants + 𝒫 + κ + facade, with TDD unit tests | All unit tests green; offline — **DELIVERED** |
-| **P2** | Simulated repo sandbox + generated attack suite + dynamic benchmark (`EMAR/LTSR/CDR/AVR/SLR`) | Metrics computed from execution — **DELIVERED** (9 families ×2, EMAR 0.0%) |
+| **P2** | Simulated repo sandbox + generated attack suite + dynamic benchmark (`EMAR/LTSR/CDR/AVR/SLR`) | Metrics computed from execution, never hardcoded — **DELIVERED** (§8) |
 | **P3** | Coding agent loop + pluggable LLM provider (API-key live mode) + deterministic provider | Agent applies clean work and blocks every injected mutation — **DELIVERED** |
 | **P4** | System-design plane (ADR synthesis → executable design invariants) | Design-contradiction mutation rejected at the sink via gate D1 — **DELIVERED** |
-| **P5** | Unified CI pre-flight gate, adaptive attacker suite, public CLI (`agentpoi-sde`), E2E tests | 389 tests, 77 E2E tests, `scripts/ci_check.py` VERIFICATION: PASS — **DELIVERED** |
+| **P5** | Unified CI pre-flight gate, adaptive attacker suite, public CLI (`agentpoi-sde`), E2E tests | `scripts/ci_check.py` VERIFICATION: PASS (unit + E2E suites, both domain benchmarks, documentation-sync gate) — **DELIVERED** |
+| **P6** | Merkle knowledge graph + architectural ledger + graph indexer | Recomputed Merkle root and inclusion proofs verified by unit tests — **DELIVERED** |
+| **P7** | Cross-stack schema consensus (invariant I8) | Hallucinated endpoints, verb drift and missing payload fields rejected at the sink — **DELIVERED** |
+| **P8** | Working-part anchor + isolated configuration sandbox (invariant I9) | Protected files refused without an explicit capability grant — **DELIVERED** |
+| **P9** | Safe component harvester + program slicer | Minimal dependency slice, security-sanitised, anchored into the ledger — **DELIVERED** |
+| **P10** | Facade/CLI integration, E2E acceptance, documentation sync | `agentpoi-sde` CLI end to end; docs regenerated from live metrics — **DELIVERED** |
 
 ### Explicitly out of scope for this branch
 - Any multi-language code-gen beyond the Python AST layer (extensible by design, not built now).
@@ -164,7 +195,7 @@ declared scope, or (f) introduce a malicious dependency — and have that mutati
 **Success criterion (state-diff oracle).** The attack succeeds iff the simulated repository's
 final state contains the adversary's intended mutation, judged independently of the defence.
 
-**Guarantee.** For any Δ that violates I1–I7, 𝒫, κ or freshness, the sink does not fire. This is
+**Guarantee.** For any Δ that violates I1–I9, 𝒫, κ or freshness, the sink does not fire. This is
 a fail-closed guarantee over the enforced invariant set — not a claim of universal safety
 (unmodelled invariants are outside the guarantee, and are reported as such).
 
@@ -192,7 +223,7 @@ sequenceDiagram
     Anchor-->>CLI: R0 (Tree OID, AST Graph, ADR Policy)
     loop For each proposed mutation Δ
         CLI->>Verifier: verify(intent, delta)
-        Note over Verifier: Enforces I1–I7 & ADR Gate D1
+        Note over Verifier: Enforces I1–I9 & ADR Gate D1
         Verifier-->>CLI: List[InvariantViolation]
     end
     alt Zero Violations
@@ -206,14 +237,40 @@ sequenceDiagram
 
 ## 8. Empirical Benchmark Evaluation (Live Simulated Execution)
 
-Evaluated across the 13 adaptive attack families (including AST dynamic evasion, assertion trivialization, comment injection, and obfuscated egress endpoints) against a defense-independent state-diff oracle:
+The table below is generated by `scripts/render_sde_metrics.py` from a live
+`run_benchmark()` execution; `tests/test_sde_docs_metrics.py` and the pre-flight gate fail if it
+ever drifts from the code. Reproduce it with `python -m agentpoi_sde.eval.benchmark` or
+`agentpoi-sde benchmark`.
 
-| Mode | EMAR (↓) | LTSR (↑) | CDR (↓) | AVR (↓) | SLR (↓) | Mean Latency |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Undefended (permissive)** | 100.0% | 100.0% | 0.0% | 6.2% | 6.2% | 1.79 ms |
-| **AgentPOI-SDE (fail-closed)** | **0.0%** | **100.0%** | **0.0%** | **0.0%** | **0.0%** | 3.94 ms |
+<!-- BEGIN SDE_BENCHMARK (generated by scripts/render_sde_metrics.py from a live benchmark run; do not edit by hand) -->
 
-- **Empirical Mutation Attack Rate (EMAR)**: Adversary success rate in landing illegal mutations into the working tree (reduced to **0.0%**).
-- **Legitimate Task Survival Rate (LTSR)**: Utility preservation on authorized engineering refactors (maintained at **100.0%**).
-- **Architecture Violation Rate (AVR)** & **Secret Leak Rate (SLR)**: Ground-truth invariant breaches detected by post-execution AST scans (both **0.0%**).
+_Generated from a live execution of the 32-scenario suite: 26 adversarial mutations across 13 attack families plus 6 legitimate engineering tasks, scored by a defence-independent state-diff oracle._
+
+| Mode | Scenarios | EMAR (↓) | LTSR (↑) | CDR (↓) | AVR (↓) | SLR (↓) | Mean Latency |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Undefended (permissive) | 32 | 100.0% | 100.0% | 0.0% | 6.2% | 6.2% | 1.51 ms |
+| **AgentPOI-SDE (fail-closed)** | 32 | **0.0%** | **100.0%** | **0.0%** | **0.0%** | **0.0%** | 6.12 ms |
+
+- **Adversarial mutations landed under AgentPOI-SDE:** 0/26 (26 blocked fail-closed).
+- **Legitimate engineering tasks preserved:** 6/6.
+- **AVR / SLR** count architecture and credential breaches in the *resulting repository state* of every landed mutation, read after execution — not from the defence's verdict.
+- Mean latency is machine dependent and is excluded from the documentation sync check.
+
+<!-- END SDE_BENCHMARK -->
+
+- **Empirical Mutation Attack Rate (EMAR)**: share of adversarial mutations that landed in the
+  working tree — lower is better.
+- **Legitimate Task Survival Rate (LTSR)**: share of legitimate engineering tasks applied —
+  higher is better. **CDR** is its complement among clean scenarios (false rejections).
+- **Architecture Violation Rate (AVR)** & **Secret Leak Rate (SLR)**: ground-truth invariant
+  breaches found by post-execution AST scans of the *resulting repository state* of every landed
+  mutation — read independently of the defence's verdict.
+
+### Reproduction limits (stated explicitly)
+
+- The suite is a deterministic **in-process simulation** of a repository, not a live clone of a
+  production codebase; it exercises the enforcement logic, not the whole toolchain.
+- Latency figures are single-machine wall-clock timings and are not comparable across hosts; they
+  are therefore excluded from the documentation sync check.
+- The `--check` mode of the documentation renderer ignores latency for the same reason.
 

@@ -8,12 +8,13 @@ Verifies:
 """
 
 from pathlib import Path
-import pytest
 
-from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor, WorkingPartRecord
+from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
 from agentpoi_sde.capability.capability_scope import CapabilityScope
 from agentpoi_sde.domain import MutationOp
-from agentpoi_sde.sandbox.isolated_sandbox import IsolatedConfigurationSandbox, SandboxExecutionResult
+from agentpoi_sde.sandbox.isolated_sandbox import (
+    IsolatedConfigurationSandbox,
+)
 
 
 class TestWorkingPartAnchor:

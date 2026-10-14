@@ -1,6 +1,8 @@
 """Tests for the six sink invariants (I1-I6), syntax integrity (I7) and design gates (D1)."""
 
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
+from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
+from agentpoi_sde.capability.capability_scope import CapabilityScope
 from agentpoi_sde.delta.mutation_delta import MutationDeltaExtractor
 from agentpoi_sde.domain import (
     CodeMutation,
@@ -18,8 +20,6 @@ from agentpoi_sde.eval.repo_sandbox import (
     TEST_ENGINE_SRC,
     RepoSandbox,
 )
-from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
-from agentpoi_sde.capability.capability_scope import CapabilityScope
 from agentpoi_sde.facade import DevGuard
 from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
 

@@ -15,7 +15,9 @@ from agentpoi_sde.agent.llm_provider import (
 )
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.anchor.symbol_index import SymbolIndex
+from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
 from agentpoi_sde.capability.capability_scope import CapabilityScope
+from agentpoi_sde.cli import main
 from agentpoi_sde.delta.mutation_delta import MutationDeltaExtractor
 from agentpoi_sde.domain import (
     ArchitecturePolicy,
@@ -47,11 +49,6 @@ from agentpoi_sde.exceptions import (
     TestIntegrityError,
     UntrustedProvenanceError,
 )
-
-__version__ = "0.1.0"
-
-from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
-from agentpoi_sde.cli import main
 from agentpoi_sde.facade import DevGuard, MutationVerdict
 from agentpoi_sde.graph.arch_ledger import ArchConnection, ArchitecturalLedger
 from agentpoi_sde.graph.merkle_graph import MerkleKnowledgeGraph
@@ -68,15 +65,22 @@ from agentpoi_sde.sandbox.isolated_sandbox import (
 )
 from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
 
+__version__ = "0.1.0"
+
 __all__ = [
     "DevGuard",
     "MutationVerdict",
     "WorkingPartAnchor",
     "IsolatedConfigurationSandbox",
+    "SandboxExecutionResult",
     "ComponentHarvester",
+    "HarvestedComponent",
+    "LocalComponentRegistry",
     "ProgramSlicer",
+    "SliceResult",
     "MerkleKnowledgeGraph",
     "ArchitecturalLedger",
+    "ArchConnection",
     "GuardPolicy",
     "CodeMutation",
     "MutationOp",

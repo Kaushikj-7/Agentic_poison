@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Optional
 
 from agentpoi_sde.graph.merkle_graph import EdgeType, MerkleGraph, NodeType
 

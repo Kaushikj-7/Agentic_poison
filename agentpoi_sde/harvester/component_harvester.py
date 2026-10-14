@@ -7,7 +7,7 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from agentpoi_sde.harvester.program_slicer import ProgramSlicer, SliceResult
+from agentpoi_sde.harvester.program_slicer import ProgramSlicer
 from agentpoi_sde.harvester.slicer_security import (
     SlicerSecurityResult,
     SlicerSecurityValidator,

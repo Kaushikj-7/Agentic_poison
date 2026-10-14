@@ -9,24 +9,19 @@ Verifies:
 - AST indexing into the cryptographic graph.
 """
 
-import hashlib
-import json
-import pytest
 from pathlib import Path
 
-from agentpoi_sde.graph.merkle_graph import (
-    MerkleNode,
-    MerkleEdge,
-    MerkleGraph,
-    NodeType,
-    EdgeType,
-)
 from agentpoi_sde.graph.arch_ledger import (
-    ArchLedgerBlock,
-    ArchitecturalLedger,
     ArchConnection,
+    ArchitecturalLedger,
 )
 from agentpoi_sde.graph.graph_indexer import GraphIndexer
+from agentpoi_sde.graph.merkle_graph import (
+    EdgeType,
+    MerkleGraph,
+    MerkleNode,
+    NodeType,
+)
 
 
 class TestMerkleGraph:

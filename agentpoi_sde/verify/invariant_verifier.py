@@ -1,4 +1,4 @@
-"""Repository Invariant Verifier: the six deterministic sink gates (I1-I6) plus design gates.
+"""Repository Invariant Verifier: the nine deterministic sink gates (I1-I9) plus design gates.
 
 Each invariant maps to a documented, currently-unmitigated attack class (see
 ``docs/SDE_ARCHITECTURE.md`` §3). The verifier is pure: it takes the immutable repository

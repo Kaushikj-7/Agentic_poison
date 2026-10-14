@@ -9,11 +9,12 @@ by hand. Mirrors ``agent_poi.facade.FinancialGuard`` for cross-platform consiste
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from agent_poi.memory.schema import SourceOrigin
 from agentpoi_sde.anchor.policy_registry import injection_marker_hits
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
+from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
 from agentpoi_sde.capability.capability_scope import CapabilityScope
 from agentpoi_sde.delta.mutation_delta import MutationDeltaExtractor, screen_mutation_content
 from agentpoi_sde.domain import (
@@ -40,13 +41,11 @@ from agentpoi_sde.exceptions import (
     TestIntegrityError,
     UntrustedProvenanceError,
 )
-from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
-from agentpoi_sde.graph.arch_ledger import ArchConnection, ArchitecturalLedger
+from agentpoi_sde.graph.arch_ledger import ArchitecturalLedger
 from agentpoi_sde.graph.merkle_graph import MerkleKnowledgeGraph
 from agentpoi_sde.harvester.component_harvester import (
     ComponentHarvester,
     HarvestedComponent,
-    LocalComponentRegistry,
 )
 from agentpoi_sde.provenance.code_provenance import ProvenanceDAG
 from agentpoi_sde.sandbox.isolated_sandbox import (

@@ -1,9 +1,13 @@
-# Architectural Specification: Cryptographic Knowledge Graph, Cross-Stack Invariants, & Component Harvesting for Autonomous Coding Agents
+# AgentPOI-SDE — Cryptographic Knowledge Graph & Cross-Stack Contract Architecture
 
-**Document Version:** 1.0.0  
-**Status:** IMPLEMENTATION_PLAN  
-**Domain:** Autonomous Software Engineering (`agentpoi_sde`)  
-**Theoretical Anchors:** Merkle Automata, Program Slicing (Weiser 1984, RepoSlice 2025), Contract-First Full-Stack Consensus (OAS 3.1), Epistemic State Anchoring (AgentPOI DSEC)
+**Document version:** 1.0.0
+**Status:** implemented (Subsystems G/C/W/H ship in `agentpoi_sde`; verified by the unit suite
+and the pre-flight gate).
+**Domain:** Autonomous Software Engineering (`agentpoi_sde`)
+**Theoretical anchors:** Merkle trees and hash chains, program slicing (Weiser 1984), contract-first
+full-stack consensus (OpenAPI 3.1), epistemic state anchoring (AgentPOI DSEC).
+**Companion specification:** [`SDE_ARCHITECTURE.md`](SDE_ARCHITECTURE.md) (the I1–I9 sink
+governance gate this document extends).
 
 ---
 
@@ -55,17 +59,28 @@ f_j.\text{method} = b_k.\text{method} \\
 f_j.\text{query\_params} \subseteq b_k.\text{query\_params} \\
 \text{SchemaCompatible}(f_j.\text{body\_schema}, b_k.\text{body\_schema}) = \text{True}
 \end{cases}$$
-If any $f_j$ fails this predicate, the mutation is rejected with invariant violation code `I8:CROSS_STACK_SCHEMA_DRIFT`.
+If any $f_j$ fails this predicate, the mutation is rejected with invariant code `I8` and one of
+the violation codes the verifier actually emits:
+
+| Condition | Violation code |
+|---|---|
+| No backend route matches the normalised path | `I8:ENDPOINT_NOT_FOUND` |
+| Path matches but the HTTP verb does not | `I8:METHOD_MISMATCH` |
+| Required request fields are absent from the call payload | `I8:MISSING_REQUIRED_FIELD` |
 
 ### 2.3 Working-Part Immutability Invariant (Invariant I9)
-Let $\mathcal{W}_{working} \subset \mathcal{V}_{files}$ be the set of verified working files and regression tests anchored in $\mathcal{S}_0$.
+Let $\mathcal{W}_{working} \subset \mathcal{V}_{files}$ be the set of verified working files and regression tests anchored in $\mathcal{R}_0$.
 Let $\mathcal{C}_{scope} = \langle \text{allowed\_paths}, \text{allowed\_symbols}, \text{token\_id} \rangle$ be the agent's capability scope for the active task.
 Let $\Delta = \text{MutationDelta}(P)$.
 
 Invariant I9 holds if and only if:
 $$\forall \text{file } f \in \text{ModifiedFiles}(\Delta): f \in \mathcal{C}_{scope}.\text{allowed\_paths} \quad \land \quad f \notin \mathcal{W}_{working} \setminus \mathcal{C}_{scope}.\text{allowed\_paths}$$
-Furthermore, before landing $\Delta$ on the primary tree, the test harness executes all regression tests $T \in \mathcal{W}_{working}$ in an isolated temporary sandbox. If any pre-existing test fails:
-$$\text{PassRate}(\mathcal{W}_{tests}, R_0 + \Delta) < 1.0 \implies \text{Reject}(\Delta, \text{"I9:REGRESSION\_VIOLATION"})$$
+**What is enforced automatically, and what is not.** The path/scope half of I9 above is enforced on
+every mutation: a registered working file is refused unless the active capability scope grants it
+(`I9` in `RepoInvariantVerifier.check_working_parts`). The evidence half — running the registered
+regression suites in an isolated configuration and rejecting on a non-zero exit status — is an
+explicit call (`DevGuard.run_sandbox_tests`), which returns a `SandboxExecutionResult`. It is not
+wired into the automatic sink, and this specification deliberately does not claim that it is.
 
 ### 2.4 Minimal Program Slicing $\text{Slice}(C, s)$
 Given an open-source component or module $C$ and target symbol $s$:
@@ -100,5 +115,11 @@ All extraneous declarations, demo drivers, unit test harnesses, and credential v
 ### Phase P10: Public Facade, CLI Integration, E2E Acceptance & Verification
 - `agentpoi_sde/facade.py`: Expose unified methods on `DevGuard`.
 - `agentpoi_sde/cli.py`: Console commands for graph verification, cross-stack audit, component harvesting, and isolated sandbox tests.
-- Full unit test suites (>80% coverage) and E2E test verification.
+- Unit, integration and opaque-box end-to-end test suites, plus the documentation-sync gate that
+  fails the build if a published metric drifts from live execution (`scripts/render_sde_metrics.py --check`).
 - Documentation updates and Project Ledger recording.
+
+### Delivery status
+
+All of P6–P10 are implemented; the module list above is the shipped layout, and the phase headings
+are retained here as the design record rather than as a to-do list.
