@@ -65,7 +65,7 @@ flowchart TD
         UX["Untrusted Context (T2)<br/>tool output / web / deps / MCP"]
     end
     subgraph T1b["Tier 1 — Intent Shield"]
-        IS["Imperative-divergence gate<br/>(reuses agent_poi TaskShieldGate)"]
+        IS["Imperative-divergence gate<br/>injection-marker screening of T2 context"]
     end
     subgraph T2b["Tier 2 — Anchor Construction"]
         RA["RepositoryStateAnchor ℛ₀<br/>git OID · AST symbols · import graph<br/>lockfile digests · protected paths · ADR policy"]
@@ -130,7 +130,7 @@ the evidence half is an explicit API call, so this document does not claim it is
 | Anchor | `anchor/repo_anchor.py` | `RepositoryStateAnchor` ℛ₀ (content-addressed tree OID) |
 | Delta | `delta/mutation_delta.py` | `MutationDeltaExtractor` — Δ(edit) normalisation & AST parsing |
 | Delta | `delta/diff_parser.py` | Fail-closed unified diff/patch parser with path containment |
-| Provenance | `provenance/code_provenance.py` | `ProvenanceDAG` 𝒫 over `agent_poi.core.taint_tracker.AuthGraphDAG` |
+| Provenance | `provenance/code_provenance.py` | `ProvenanceDAG` 𝒫 — SHA-256 hash-chained, trust-tier-aware lineage over `agent_poi.memory.schema.SourceOrigin` |
 | Capability | `capability/capability_scope.py` | `CapabilityScope` κ tokens + freshness nonce store |
 | Verify | `verify/invariant_verifier.py` | `RepoInvariantVerifier` — the nine gates (I1–I9) + design gate D1 |
 | Anchor | `anchor/working_part_anchor.py` | `WorkingPartAnchor` — registry of verified working parts / regression suites (I9) |
@@ -163,7 +163,7 @@ the evidence half is an explicit API call, so this document does not claim it is
 | Phase | Deliverable | Gate |
 |---|---|---|
 | **P0** | Novelty-gap analysis (`docs/NOVELTY_GAP.md`) | Literature verified — **PASSED** |
-| **P1** | Anchor ℛ₀ + Δ(edit) + seven invariants + 𝒫 + κ + facade, with TDD unit tests | All unit tests green; offline — **DELIVERED** |
+| **P1** | Anchor ℛ₀ + Δ(edit) + invariants I1–I7 + 𝒫 + κ + facade, with TDD unit tests (I8–I9 added in P7–P8) | All unit tests green; offline — **DELIVERED** |
 | **P2** | Simulated repo sandbox + generated attack suite + dynamic benchmark (`EMAR/LTSR/CDR/AVR/SLR`) | Metrics computed from execution, never hardcoded — **DELIVERED** (§8) |
 | **P3** | Coding agent loop + pluggable LLM provider (API-key live mode) + deterministic provider | Agent applies clean work and blocks every injected mutation — **DELIVERED** |
 | **P4** | System-design plane (ADR synthesis → executable design invariants) | Design-contradiction mutation rejected at the sink via gate D1 — **DELIVERED** |

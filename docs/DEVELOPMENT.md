@@ -1,46 +1,82 @@
 # Contributor & Development Guide: File Classification & Architecture Boundaries
 
-This document formalizes the repository structure, abstraction boundaries, and file classification policies for AgentPOI contributors.
+This document formalizes the repository structure, abstraction boundaries and file classification
+policy for contributors to **AgentPOI-SDE** on branch `codebleak`.
 
-## 1. Abstraction Boundary Principles
+## 1. Scope of this branch
 
-AgentPOI adheres to the strict encapsulation standards seen in industry platforms (Anthropic Claude Code, OpenClaw, CrewAI):
-- **Public SDK Consumption**: Users and application engineers must interact with the framework exclusively via the top-level facade (`agent_poi.FinancialGuard`), typed policies (`SecurityPolicy`), verdicts (`GuardVerdict`), and typed exceptions (`FinancialSecurityError`, `UnauthorizedPayeeError`, etc.).
-- **Internal Mechanics Encapsulation**: Low-level parsing (`FinancialDeltaExtractor`), cryptographic lineage hashing (`AuthGraphDAG`), and heuristic verification (`ContextualInvariantVerifier`) are decoupled and maintained behind clean interfaces.
-- **Scaffolding Isolation**: Internal agent personas, development ledgers, experimental scratchpads, and prompt engineering templates must remain isolated from consumer distributions and must never be tracked in git.
+Branch `codebleak` hosts the **autonomous software-engineering (coding-agent) domain**:
 
----
+- **Package:** `agentpoi_sde` — anchor construction, mutation delta extraction, the invariant
+  engine (I1–I9 + design gate D1), provenance, capability scopes, the Merkle knowledge graph,
+  cross-stack schema consensus, the safe harvester, the sandbox runner and the evaluation harness.
+- **Public facade:** `agentpoi_sde.DevGuard` (`facade.py`).
+- **CLI:** `agentpoi-sde` (`anchor`, `check-diff`, `benchmark`, `graph`, `cross-stack`, `harvest`,
+  `sandbox`).
+- **Specification:** [`SDE_ARCHITECTURE.md`](SDE_ARCHITECTURE.md) and
+  [`CRYPTOGRAPHIC_GRAPH_ARCHITECTURE.md`](CRYPTOGRAPHIC_GRAPH_ARCHITECTURE.md).
 
-## 2. File Classification Matrix
+The only shared surface with the sibling financial-domain package is the context-origin enum
+`agent_poi.memory.schema.SourceOrigin`, which supplies the trust-tier vocabulary (`T0`
+authenticated intent, `T1` repository ground truth, `T2` untrusted context) used by the provenance
+DAG and the scenario dataset.
 
-The repository maintains an explicit boundary between **Consumer Distribution Artifacts** (packaged and distributed to developers) and **Internal Developer Scaffolding** (strictly ignored via `.gitignore`):
+## 2. Abstraction Boundary Principles
+
+- **Public SDK consumption:** users and application engineers interact with the framework via the
+  top-level facade (`DevGuard`, `GuardPolicy`), typed domain objects (`CodeMutation`, `MutationOp`,
+  `MutationVerdict`) and typed exceptions (`PolicyFileIntegrityError`, `TestIntegrityError`,
+  `SecretProliferationError`, `ArchitectureViolationError`, `BlastRadiusError`,
+  `DependencyProvenanceError`, `SyntaxIntegrityError`, `UntrustedProvenanceError`,
+  `CapabilityScopeError`, `ReplayDetectedError`).
+- **Internal mechanics encapsulation:** unified-diff parsing and path containment, AST symbol and
+  import indexing, invariant evaluation, Merkle graph construction, capability tokens and the
+  freshness nonce store, and harvester slicing/sanitisation remain behind clean interfaces.
+- **Scaffolding isolation:** internal agent personas, development ledgers, experimental scratchpads
+  and prompt-engineering templates must remain isolated from consumer distributions and must never
+  be tracked in git.
+
+## 3. File Classification Matrix
+
+The repository maintains an explicit boundary between **Consumer Distribution Artifacts**
+(packaged and distributed) and **Internal Developer Scaffolding** (strictly ignored via
+`.gitignore`):
 
 | Scope | Path / Pattern | Purpose | Audience | Distribution / Git Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Public SDK** | `agent_poi/facade.py` | High-level `FinancialGuard` facade | All End-Users & Integrators | Distributed via pip / Tracked in Git |
-| **Public SDK** | `agent_poi/financial/` | State anchor $\mathcal{S}_0$, invariant verifier, delta extractor | Financial Workflow Integrators | Distributed via pip / Tracked in Git |
-| **Public SDK** | `agent_poi/core/` | `TaskShieldGate`, `AuthGraphDAG`, CI decomposer | Security Researchers & Core SDK | Distributed via pip / Tracked in Git |
-| **Public SDK** | `agent_poi/memory/` | Memory firewall & quarantine vault | Long-term Memory Systems | Distributed via pip / Tracked in Git |
-| **Public Benchmark** | `agent_poi/financial/eval/` | 60-scenario ground-truth evaluation suite | Evaluators & Auditors | Distributed / Tracked in Git |
-| **Public Tests** | `tests/` | 47 automated unit & integration tests | CI/CD & Open-Source Contributors | Tracked in Git |
-| **Public Docs** | `docs/` | Formal architecture, math formulation, methodology | Open-Source Community | Tracked in Git |
-| **Public Packaging** | `pyproject.toml`, `requirements.txt`, `LICENSE` | Standard packaging and MIT license | Python Packaging Index (PyPI) | Tracked in Git |
-| **Internal Governance** | `AGENTS.md` | Persona behavioral invariants & TDD rules | Autonomous Agent Pair Programmers | **Strictly Ignored (`.gitignore`)** |
-| **Internal Governance** | `PROJECT_LEDGER.md` | Milestone tracking & decision log (DEC-xxx) | Core Maintainers | **Strictly Ignored (`.gitignore`)** |
-| **Internal Governance** | `MISTAKES_LEDGER.md` | Post-mortem analysis of failed approaches | Core Maintainers | **Strictly Ignored (`.gitignore`)** |
-| **Internal Governance** | `docs/MONITORING_AGENT.md` | Supervisory agent orchestrator specification | Multi-Agent Harness | **Strictly Ignored (`.gitignore`)** |
-| **Internal Scaffolding** | `everything-claude-code/` | Private prompt workflows & templates | Internal Agent Harness | **Strictly Ignored (`.gitignore`)** |
-| **Local Artifacts** | `logs/`, `scratch/`, `.pytest_cache/` | Test logs and temporary run caches | Local Machine | **Strictly Ignored (`.gitignore`)** |
+| **Public SDK** | `agentpoi_sde/facade.py` | High-level `DevGuard` facade, `GuardPolicy`, `MutationVerdict` | All end-users & integrators | Distributed via pip / Tracked in Git |
+| **Public SDK** | `agentpoi_sde/anchor/`, `agentpoi_sde/delta/` | ℛ₀ anchor construction, AST symbol/import indexing, mutation delta extraction | SDK & security researchers | Distributed via pip / Tracked in Git |
+| **Public SDK** | `agentpoi_sde/verify/invariant_verifier.py` | Invariant engine (I1–I9) + executable design gate (D1) | SDK & security researchers | Distributed via pip / Tracked in Git |
+| **Public SDK** | `agentpoi_sde/provenance/`, `agentpoi_sde/capability/` | Provenance DAG 𝒫, capability scope κ and freshness store | SDK integrators | Distributed via pip / Tracked in Git |
+| **Public SDK** | `agentpoi_sde/graph/`, `agentpoi_sde/schema/` | Merkle knowledge graph, architectural ledger, cross-stack contract verification | SDK integrators | Distributed via pip / Tracked in Git |
+| **Public SDK** | `agentpoi_sde/harvester/`, `agentpoi_sde/sandbox/`, `agentpoi_sde/agent/` | Safe component harvesting/slicing, isolated sandbox execution, agent loop & providers | SDK integrators | Distributed via pip / Tracked in Git |
+| **Public Benchmark** | `agentpoi_sde/eval/` | Adaptive adversarial suite, repo sandbox and dynamic metrics | Evaluators & auditors | Distributed / Tracked in Git |
+| **Public Tests** | `tests/` (incl. `tests/e2e/`) | Unit, integration and opaque-box acceptance suites | CI/CD & open-source contributors | Tracked in Git |
+| **Public Docs** | `docs/` | SDE architecture, cryptographic graph specification, novelty gap analysis | Open-source community | Tracked in Git |
+| **Public Packaging** | `pyproject.toml`, `requirements.txt`, `LICENSE` | Packaging, dependencies and MIT license | Python Packaging Index (PyPI) | Tracked in Git |
+| **Internal Governance** | `AGENTS.md` | Persona behavioural invariants & TDD rules | Autonomous agent pair programmers | **Strictly Ignored (`.gitignore`)** |
+| **Internal Governance** | `PROJECT_LEDGER.md` | Milestone tracking and decision log | Core maintainers | **Strictly Ignored (`.gitignore`)** |
+| **Internal Governance** | `MISTAKES_LEDGER.md` | Post-mortem analysis of failed approaches | Core maintainers | **Strictly Ignored (`.gitignore`)** |
+| **Internal Governance** | `TEST_READY.md`, `docs/MONITORING_AGENT.md` | Test-readiness notes, supervisory agent specification | Multi-agent harness | **Strictly Ignored (`.gitignore`)** |
+| **Internal Scaffolding** | `everything-claude-code/`, `.agents/` | Private prompt workflows & templates | Internal agent harness | **Strictly Ignored (`.gitignore`)** |
+| **Local Artifacts** | `logs/`, `scratch/`, `local_audit/`, `legacy/`, `.pytest_cache/` | Local logs, caches and audit campaigns | Local machine | **Strictly Ignored (`.gitignore`)** |
 
----
+## 4. Git Workflow & PR Invariants
 
-## 3. Git Workflow & PR Invariants
-
-1. **Branching Strategy**: Core domain development proceeds on feature branches (`dev/financial-core`).
-2. **Author Identity**: All commits must be attributed to the user identity:
+1. **Branching strategy:** this domain is developed on `codebleak`; the sibling financial domain
+   proceeds on its own branches and is not documented here.
+2. **Author identity:** all commits must be attributed to the user identity:
    ```bash
    git config user.name "Kaushik"
    git config user.email "kaushikj2005@gmail.com"
    ```
-3. **No Unapproved Pushes**: Pushes to remote repositories (`git push origin ...`) require explicit confirmation from the repository owner.
-4. **Pre-Flight Verification**: Run `python scripts/ci_check.py` locally before requesting PR review. All 5 gates (Syntax, Secrets, Unit Tests, Benchmark Invariant, Ledger) must pass.
+3. **No unapproved pushes:** pushing to a remote (`git push origin ...`) requires explicit
+   confirmation from the repository owner. Stage, commit and verify locally first.
+4. **Pre-flight verification:** run `python scripts/ci_check.py` before requesting review. The gate
+   covers Python syntax, the secrets audit, the unit suite, the dynamic AgentPOI-SDE benchmark,
+   documentation-metrics sync, working-tree cleanliness, ledger status and the code-principles
+   audit; it also re-runs the inherited financial-domain benchmark, which this branch does not
+   modify.
+5. **Generated documentation is never hand-edited:** the benchmark block in `README.md` and
+   `docs/SDE_ARCHITECTURE.md` is produced by `scripts/render_sde_metrics.py` from a live
+   `run_benchmark()` execution. Run it (or `--check` to verify) instead of typing numbers.
