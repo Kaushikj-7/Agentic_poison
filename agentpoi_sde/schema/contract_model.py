@@ -21,23 +21,29 @@ class HTTPMethod(str, Enum):
 
 
 def normalize_route_path(path: str) -> str:
-    """Normalizes parameterized route paths across Express (:id) and FastAPI/OpenAPI ({id}).
+    """Normalizes parameterized route paths across Express (:id), FastAPI ({id}),
+    Flask (<int:id>, <id>), and JS template strings (${id}).
 
     Examples:
         /api/users/:userId -> /api/users/{}
         /api/users/{userId} -> /api/users/{}
-        /api/v1/posts/:slug/comments -> /api/v1/posts/{}/comments
+        /api/users/${userId} -> /api/users/{}
+        /api/users/<int:userId> -> /api/users/{}
     """
     clean_path = path.strip()
     # Strip query parameters if present
     if "?" in clean_path:
         clean_path = clean_path.split("?")[0]
+    # Replace JS template literals: ${userId} or ${item.id} with {}
+    p0 = re.sub(r"\$\{[^}]+\}", "{}", clean_path)
+    # Replace Flask style: <int:userId> or <userId> with {}
+    p1 = re.sub(r"<[^>]+>", "{}", p0)
     # Replace :param_name with {}
-    p1 = re.sub(r":\w+", "{}", clean_path)
+    p2 = re.sub(r":\w+", "{}", p1)
     # Replace {param_name} with {}
-    p2 = re.sub(r"\{\w+\}", "{}", p1)
+    p3 = re.sub(r"\{[^{}]*\}", "{}", p2)
     # Normalize duplicate slashes and trailing slashes (except root '/')
-    norm = re.sub(r"/+", "/", p2)
+    norm = re.sub(r"/+", "/", p3)
     if len(norm) > 1 and norm.endswith("/"):
         norm = norm[:-1]
     return norm

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -44,20 +45,27 @@ class LocalComponentRegistry:
         """Retrieves registered source code."""
         return self._sources.get((repo_name, file_path.replace("\\", "/")))
 
+    def _match_symbols_in_code(
+        self, repo: str, path: str, code: str, query: str
+    ) -> List[Tuple[str, str, str]]:
+        """Extracts matching function and class names from Python code."""
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            return []
+        q = query.lower()
+        return [
+            (repo, path, node.name)
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and q in node.name.lower()
+        ]
+
     def search_symbols(self, query: str) -> List[Tuple[str, str, str]]:
         """Finds matching symbols containing query across indexed sources."""
-        import ast
-
         matches: List[Tuple[str, str, str]] = []
         for (repo, path), code in self._sources.items():
-            try:
-                tree = ast.parse(code)
-                for node in tree.body:
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                        if query.lower() in node.name.lower():
-                            matches.append((repo, path, node.name))
-            except SyntaxError:
-                continue
+            matches.extend(self._match_symbols_in_code(repo, path, code, query))
         return matches
 
 

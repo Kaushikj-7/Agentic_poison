@@ -28,11 +28,13 @@ class TestCrossStackContractModels:
     """Tests for universal endpoint contracts."""
 
     def test_path_normalization(self):
-        """Path templates with Express (:id) or FastAPI ({id}) normalize identically."""
+        """Path templates with Express (:id), FastAPI ({id}), Flask (<int:id>), and JS template strings (${id}) normalize identically."""
         c1 = EndpointContract(method=HTTPMethod.GET, path_template="/api/users/{user_id}")
         c2 = EndpointContract(method=HTTPMethod.GET, path_template="/api/users/:user_id")
+        c3 = EndpointContract(method=HTTPMethod.GET, path_template="/api/users/${userId}")
+        c4 = EndpointContract(method=HTTPMethod.GET, path_template="/api/users/<int:user_id>")
 
-        assert c1.normalized_path == c2.normalized_path
+        assert c1.normalized_path == c2.normalized_path == c3.normalized_path == c4.normalized_path
         assert c1.normalized_path == "/api/users/{}"
 
 
@@ -54,6 +56,23 @@ class TestFrontendExtractor:
         assert len(calls) == 1
         assert calls[0].method == HTTPMethod.GET
         assert "/api/users/" in calls[0].raw_path
+        assert calls[0].normalized_path == "/api/users/{}"
+
+    def test_extract_single_line_keys(self):
+        js_code = "axios.post('/api/users', { name: 'Alice', email: 'alice@example.com' });"
+        extractor = FrontendCallExtractor()
+        calls = extractor.extract_calls("app.js", js_code)
+
+        assert len(calls) == 1
+        assert set(calls[0].payload_keys) == {"name", "email"}
+
+    def test_extract_es6_shorthand_keys(self):
+        js_code = "axios.post('/api/v1/disburse', { payee_id, amount, currency });"
+        extractor = FrontendCallExtractor()
+        calls = extractor.extract_calls("app.js", js_code)
+
+        assert len(calls) == 1
+        assert set(calls[0].payload_keys) == {"payee_id", "amount", "currency"}
 
     def test_extract_axios_post_with_body(self):
         ts_code = """

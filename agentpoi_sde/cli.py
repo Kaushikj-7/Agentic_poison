@@ -6,6 +6,8 @@ Exposes subcommands for:
 - Dynamic adaptive benchmark audits with structured reporting (`benchmark`)
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -29,8 +31,63 @@ from agentpoi_sde.graph.merkle_graph import MerkleGraph
 from agentpoi_sde.harvester.component_harvester import ComponentHarvester
 from agentpoi_sde.sandbox.isolated_sandbox import IsolatedConfigurationSandbox
 from agentpoi_sde.schema.backend_extractor import BackendRouteExtractor
+from agentpoi_sde.schema.contract_model import BackendRoute, FrontendCall
 from agentpoi_sde.schema.cross_stack_verifier import CrossStackVerifier
 from agentpoi_sde.schema.frontend_extractor import FrontendCallExtractor
+
+
+def _add_core_subparsers(subparsers: argparse._SubParsersAction) -> None:
+    """Registers core subcommands: anchor, check-diff, benchmark."""
+    # 1. anchor
+    p_anchor = subparsers.add_parser(
+        "anchor",
+        help="Inspect and compute R0 state anchor for a repository or directory",
+    )
+    p_anchor.add_argument("path", nargs="?", default=".", help="Path to repository")
+    p_anchor.add_argument("--json", action="store_true", help="Output anchor metadata as JSON")
+    p_anchor.add_argument("--manifest", action="store_true", help="Include full manifest")
+
+    # 2. check-diff
+    p_diff = subparsers.add_parser(
+        "check-diff",
+        help="Validate git diff or patch fail-closed against repository invariants",
+    )
+    p_diff.add_argument("patch_file", nargs="?", default=None, help="Path to diff/patch file")
+    p_diff.add_argument("--repo", default=".", help="Path to root of repository")
+    p_diff.add_argument("--staged", action="store_true", help="Inspect staged changes")
+    p_diff.add_argument("--allow", action="append", default=[], help="Allowed path pattern")
+    p_diff.add_argument("--intent-id", default="INTENT-CLI-DIFF", help="Intent identifier")
+    p_diff.add_argument("--json", action="store_true", help="Output verdict as JSON")
+
+    # 3. benchmark
+    p_bench = subparsers.add_parser(
+        "benchmark",
+        help="Run dynamic adaptive benchmark audits against defense sandbox",
+    )
+    p_bench.add_argument("--seed", type=int, default=0, help="Random seed")
+    p_bench.add_argument("--per-family", type=int, default=2, help="Scenarios per family")
+    p_bench.add_argument("--clean-per-family", type=int, default=2, help="Clean controls per family")
+    p_bench.add_argument("--format", choices=["markdown", "json", "both"], default="markdown")
+    p_bench.add_argument("-o", "--output", default=None, help="Destination report path")
+
+
+def _add_advanced_subparsers(subparsers: argparse._SubParsersAction) -> None:
+    """Registers advanced subcommands: graph, cross-stack, harvest, sandbox."""
+    p_graph = subparsers.add_parser("graph", help="Compute Merkle graph root and index symbols")
+    p_graph.add_argument("path", nargs="?", default=".", help="Target directory")
+    p_graph.add_argument("--json", action="store_true", help="Output graph metadata as JSON")
+
+    p_cs = subparsers.add_parser("cross-stack", help="Audit cross-stack schema consensus")
+    p_cs.add_argument("path", nargs="?", default=".", help="Target directory")
+    p_cs.add_argument("--json", action="store_true", help="Output audit results as JSON")
+
+    p_harv = subparsers.add_parser("harvest", help="Safely slice and sanitize component symbol")
+    p_harv.add_argument("file_path", help="Path to component source file")
+    p_harv.add_argument("symbol", help="Target symbol to slice and sanitize")
+    p_harv.add_argument("-o", "--output", default=None, help="Output destination file")
+
+    p_sand = subparsers.add_parser("sandbox", help="Execute test in isolated scratch sandbox")
+    p_sand.add_argument("test_file", help="Path to test file to execute in sandbox")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,135 +102,8 @@ def build_parser() -> argparse.ArgumentParser:
         version=f"agentpoi-sde {__version__}",
     )
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
-
-    # 1. anchor
-    p_anchor = subparsers.add_parser(
-        "anchor",
-        help="Inspect and compute R0 state anchor for a repository or directory",
-    )
-    p_anchor.add_argument(
-        "path",
-        nargs="?",
-        default=".",
-        help="Path to repository or target directory (default: current directory)",
-    )
-    p_anchor.add_argument(
-        "--json",
-        action="store_true",
-        help="Output anchor metadata as JSON",
-    )
-    p_anchor.add_argument(
-        "--manifest",
-        action="store_true",
-        help="Include full file content-hash manifest in output",
-    )
-
-    # 2. check-diff
-    p_diff = subparsers.add_parser(
-        "check-diff",
-        help="Validate git diff or patch fail-closed against repository invariants",
-    )
-    p_diff.add_argument(
-        "patch_file",
-        nargs="?",
-        default=None,
-        help="Path to diff/patch file, or '-' for standard input",
-    )
-    p_diff.add_argument(
-        "--repo",
-        default=".",
-        help="Path to root of repository or target directory (default: .)",
-    )
-    p_diff.add_argument(
-        "--staged",
-        action="store_true",
-        help="Inspect staged changes in git repository instead of unstaged",
-    )
-    p_diff.add_argument(
-        "--allow",
-        action="append",
-        default=[],
-        help="Path or glob pattern permitted by intent contract (may be repeated)",
-    )
-    p_diff.add_argument(
-        "--intent-id",
-        default="INTENT-CLI-DIFF",
-        help="Intent identifier for verification contract",
-    )
-    p_diff.add_argument(
-        "--json",
-        action="store_true",
-        help="Output verification verdict and violations as JSON",
-    )
-
-    # 3. benchmark
-    p_bench = subparsers.add_parser(
-        "benchmark",
-        help="Run dynamic adaptive benchmark audits against defense sandbox",
-    )
-    p_bench.add_argument(
-        "--seed",
-        type=int,
-        default=0,
-        help="Random seed for benchmark scenario generation (default: 0)",
-    )
-    p_bench.add_argument(
-        "--per-family",
-        type=int,
-        default=2,
-        help="Number of adversarial scenarios per attack family (default: 2)",
-    )
-    p_bench.add_argument(
-        "--clean-per-family",
-        type=int,
-        default=2,
-        help="Number of clean control scenarios per family (default: 2)",
-    )
-    p_bench.add_argument(
-        "--format",
-        choices=["markdown", "json", "both"],
-        default="markdown",
-        help="Output format (markdown, json, both; default: markdown)",
-    )
-    p_bench.add_argument(
-        "-o",
-        "--output",
-        default=None,
-        help="Optional destination file path for benchmark report",
-    )
-
-    # 4. graph
-    p_graph = subparsers.add_parser(
-        "graph",
-        help="Compute Merkle knowledge graph root and index repository symbols",
-    )
-    p_graph.add_argument("path", nargs="?", default=".", help="Target directory (default: .)")
-    p_graph.add_argument("--json", action="store_true", help="Output graph metadata as JSON")
-
-    # 5. cross-stack
-    p_cs = subparsers.add_parser(
-        "cross-stack",
-        help="Audit cross-stack schema consensus between frontend and backend",
-    )
-    p_cs.add_argument("path", nargs="?", default=".", help="Target directory (default: .)")
-    p_cs.add_argument("--json", action="store_true", help="Output audit results as JSON")
-
-    # 6. harvest
-    p_harv = subparsers.add_parser(
-        "harvest",
-        help="Safely slice and sanitize open-source component symbol from file",
-    )
-    p_harv.add_argument("file_path", help="Path to component source file")
-    p_harv.add_argument("symbol", help="Target symbol to slice and sanitize")
-    p_harv.add_argument("-o", "--output", default=None, help="Output destination file")
-
-    # 7. sandbox
-    p_sand = subparsers.add_parser(
-        "sandbox",
-        help="Execute test in isolated scratch configuration sandbox",
-    )
-    p_sand.add_argument("test_file", help="Path to test file to execute in sandbox")
-
+    _add_core_subparsers(subparsers)
+    _add_advanced_subparsers(subparsers)
     return parser
 
 
@@ -291,6 +221,110 @@ def _validate_mutation_path(path: str, repo_dir: Optional[str] = None) -> Option
     return None
 
 
+def _run_guard_on_mutations(
+    args: argparse.Namespace,
+    anchor: RepositoryStateAnchor,
+    valid_mutations: List[CodeMutation],
+) -> Tuple[bool, List[str], List[dict]]:
+    """Runs DevGuard verification over valid proposed mutations."""
+    guard = DevGuard(
+        policy=GuardPolicy.STRICT,
+        files=anchor.to_files(),
+        architecture_policy=anchor.policy,
+        dependency_allowlist=anchor.declared_dependencies,
+        design_decisions=anchor.design_decisions,
+    )
+    allowed = list(args.allow) if args.allow else [
+        m.path for m in valid_mutations if not anchor.is_protected(m.path)
+    ]
+    intent = guard.register_intent(
+        intent_id=args.intent_id,
+        goal="CLI check-diff verification",
+        allowed_paths=allowed or ["__none__"],
+    )
+    approved = True
+    violations: List[str] = []
+    reports: List[dict] = []
+    for mutation in valid_mutations:
+        nonce = f"cli-{mutation.path}-{mutation.op.value}"
+        verdict = guard.propose_mutation(mutation, intent.intent_id, nonce=nonce)
+        if not verdict.is_applied:
+            approved = False
+        for code, msg in zip(verdict.violation_codes, verdict.violations):
+            formatted = f"[{code}] {msg}" if not msg.startswith(f"[{code}]") else msg
+            violations.append(formatted)
+        reports.append({
+            "path": mutation.path,
+            "op": mutation.op.value,
+            "status": verdict.status,
+            "violations": verdict.violations,
+            "violation_codes": verdict.violation_codes,
+        })
+    return approved, violations, reports
+
+
+def _evaluate_diff_mutations(
+    args: argparse.Namespace,
+    repo_dir: str,
+    anchor: RepositoryStateAnchor,
+    mutations: List[CodeMutation],
+) -> Tuple[bool, List[str], List[dict]]:
+    """Validates paths and verifies mutations via DevGuard."""
+    all_approved = True
+    all_violations: List[str] = []
+    mutation_reports: List[dict] = []
+    valid_mutations: List[CodeMutation] = []
+
+    for mutation in mutations:
+        err_msg = _validate_mutation_path(mutation.path, repo_dir=repo_dir)
+        if err_msg:
+            all_approved = False
+            all_violations.append(f"[I1] {err_msg}")
+            mutation_reports.append({
+                "path": mutation.path,
+                "op": mutation.op.value,
+                "status": "BLOCKED",
+                "violations": [err_msg],
+                "violation_codes": ["I1"],
+            })
+        else:
+            valid_mutations.append(mutation)
+
+    if valid_mutations:
+        app, viols, reps = _run_guard_on_mutations(args, anchor, valid_mutations)
+        all_approved = all_approved and app
+        all_violations.extend(viols)
+        mutation_reports.extend(reps)
+
+    return all_approved, all_violations, mutation_reports
+
+
+def _print_check_diff_summary(
+    args: argparse.Namespace,
+    all_approved: bool,
+    all_violations: List[str],
+    mutation_reports: List[dict],
+    mutation_count: int,
+) -> int:
+    """Formats and prints the check-diff outcome report."""
+    overall_status = "APPROVED" if all_approved else "BLOCKED"
+    if args.json:
+        print(json.dumps({
+            "verdict": overall_status,
+            "mutations": mutation_reports,
+            "violations": all_violations,
+        }, indent=2))
+    else:
+        print("==================================================")
+        print(f"VERDICT: {overall_status} ({len(all_violations)} invariant violation(s) across {mutation_count} mutation(s))")
+        print("==================================================")
+        if all_violations:
+            print("\nViolations:")
+            for v in all_violations:
+                print(f"  - {v}")
+    return 0 if all_approved else 1
+
+
 def handle_check_diff(args: argparse.Namespace) -> int:
     """Handle the 'check-diff' subcommand."""
     repo_dir = os.path.abspath(args.repo)
@@ -310,82 +344,8 @@ def handle_check_diff(args: argparse.Namespace) -> int:
             print("VERDICT: APPROVED (0 mutations)")
         return 0
 
-    all_approved = True
-    all_violations: List[str] = []
-    mutation_reports: List[dict] = []
-    valid_mutations: List[CodeMutation] = []
-
-    for mutation in mutations:
-        err_msg = _validate_mutation_path(mutation.path, repo_dir=repo_dir)
-        if err_msg:
-            all_approved = False
-            v_code = "I1"
-            formatted = f"[{v_code}] {err_msg}"
-            all_violations.append(formatted)
-            mutation_reports.append({
-                "path": mutation.path,
-                "op": mutation.op.value,
-                "status": "BLOCKED",
-                "violations": [err_msg],
-                "violation_codes": [v_code],
-            })
-        else:
-            valid_mutations.append(mutation)
-
-    if valid_mutations:
-        guard = DevGuard(
-            policy=GuardPolicy.STRICT,
-            files=anchor.to_files(),
-            architecture_policy=anchor.policy,
-            dependency_allowlist=anchor.declared_dependencies,
-            design_decisions=anchor.design_decisions,
-        )
-
-        allowed = list(args.allow) if args.allow else [
-            m.path for m in valid_mutations if not anchor.is_protected(m.path)
-        ]
-        if not allowed:
-            allowed = ["__none__"]
-
-        intent = guard.register_intent(
-            intent_id=args.intent_id,
-            goal="CLI check-diff verification",
-            allowed_paths=allowed,
-        )
-
-        for mutation in valid_mutations:
-            nonce = f"cli-{mutation.path}-{mutation.op.value}"
-            verdict = guard.propose_mutation(mutation, intent.intent_id, nonce=nonce)
-            if not verdict.is_applied:
-                all_approved = False
-            for code, msg in zip(verdict.violation_codes, verdict.violations):
-                formatted = f"[{code}] {msg}" if not msg.startswith(f"[{code}]") else msg
-                all_violations.append(formatted)
-            mutation_reports.append({
-                "path": mutation.path,
-                "op": mutation.op.value,
-                "status": verdict.status,
-                "violations": verdict.violations,
-                "violation_codes": verdict.violation_codes,
-            })
-
-    overall_status = "APPROVED" if all_approved else "BLOCKED"
-    if args.json:
-        print(json.dumps({
-            "verdict": overall_status,
-            "mutations": mutation_reports,
-            "violations": all_violations,
-        }, indent=2))
-    else:
-        print("==================================================")
-        print(f"VERDICT: {overall_status} ({len(all_violations)} invariant violation(s) across {len(mutations)} mutation(s))")
-        print("==================================================")
-        if all_violations:
-            print("\nViolations:")
-            for v in all_violations:
-                print(f"  - {v}")
-
-    return 0 if all_approved else 1
+    all_approved, all_violations, reports = _evaluate_diff_mutations(args, repo_dir, anchor, mutations)
+    return _print_check_diff_summary(args, all_approved, all_violations, reports, len(mutations))
 
 
 def handle_benchmark(args: argparse.Namespace) -> int:
@@ -455,6 +415,34 @@ def handle_graph(args: argparse.Namespace) -> int:
     return 0
 
 
+def _collect_stack_contracts(
+    target: Path,
+) -> Tuple[List[FrontendCall], List[BackendRoute]]:
+    """Scans target directory and extracts frontend calls and backend routes."""
+    f_ext = FrontendCallExtractor()
+    b_ext = BackendRouteExtractor()
+    calls: List[FrontendCall] = []
+    routes: List[BackendRoute] = []
+    frontend_exts = (".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte", ".html")
+
+    for f in target.rglob("*"):
+        if not f.is_file():
+            continue
+        rel = str(f.relative_to(target)).replace("\\", "/")
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        if any(rel.endswith(ext) for ext in frontend_exts):
+            try:
+                calls.extend(f_ext.extract_calls(rel, text))
+            except Exception:
+                pass
+        elif rel.endswith(".py"):
+            try:
+                routes.extend(b_ext.extract_routes(rel, text))
+            except Exception:
+                pass
+    return calls, routes
+
+
 def handle_cross_stack(args: argparse.Namespace) -> int:
     """Handle the 'cross-stack' subcommand."""
     target = Path(args.path).resolve()
@@ -462,26 +450,10 @@ def handle_cross_stack(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Error: Target directory does not exist: {target}\n")
         return 2
 
-    f_ext = FrontendCallExtractor()
-    b_ext = BackendRouteExtractor()
-    calls = []
-    routes = []
-    frontend_exts = (".js", ".jsx", ".ts", ".tsx", ".vue", ".html")
-    for f in target.rglob("*"):
-        if f.is_file():
-            rel = str(f.relative_to(target)).replace("\\", "/")
-            if any(rel.endswith(ext) for ext in frontend_exts):
-                try:
-                    calls.extend(f_ext.extract_calls(rel, f.read_text(encoding="utf-8", errors="ignore")))
-                except Exception:
-                    pass
-            elif rel.endswith(".py"):
-                try:
-                    routes.extend(b_ext.extract_routes(rel, f.read_text(encoding="utf-8", errors="ignore")))
-                except Exception:
-                    pass
-
-    internal_calls = [c for c in calls if not (c.raw_path.startswith("http://") or c.raw_path.startswith("https://"))]
+    calls, routes = _collect_stack_contracts(target)
+    internal_calls = [
+        c for c in calls if not (c.raw_path.startswith("http://") or c.raw_path.startswith("https://"))
+    ]
     result = CrossStackVerifier().verify(internal_calls, routes)
 
     if args.json:

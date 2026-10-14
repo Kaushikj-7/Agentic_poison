@@ -71,6 +71,16 @@ class ProgramSlicer:
             is_valid=True,
         )
 
+    def _index_assign(
+        self, node: ast.Assign | ast.AnnAssign, top_defs: Dict[str, ast.AST], all_syms: List[str]
+    ) -> None:
+        """Helper to index assignment targets."""
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for target in targets:
+            if isinstance(target, ast.Name):
+                top_defs[target.id] = node
+                all_syms.append(target.id)
+
     def _index_top_level(
         self, tree: ast.Module
     ) -> Tuple[Dict[str, ast.AST], List[ast.AST], List[str]]:
@@ -85,14 +95,8 @@ class ProgramSlicer:
                 all_syms.append(node.name)
             elif isinstance(node, (ast.Import, ast.ImportFrom)):
                 import_nodes.append(node)
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        top_defs[target.id] = node
-                        all_syms.append(target.id)
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                top_defs[node.target.id] = node
-                all_syms.append(node.target.id)
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                self._index_assign(node, top_defs, all_syms)
 
         return top_defs, import_nodes, all_syms
 
@@ -106,8 +110,13 @@ class ProgramSlicer:
         import_map = self._build_import_map(import_nodes)
         needed_syms: Set[str] = {target_symbol}
         needed_imports: Set[ast.AST] = set()
-        queue: List[str] = [target_symbol]
 
+        # Always preserve __future__ imports if present
+        for imp in import_nodes:
+            if isinstance(imp, ast.ImportFrom) and imp.module == "__future__":
+                needed_imports.add(imp)
+
+        queue: List[str] = [target_symbol]
         while queue:
             current = queue.pop(0)
             node = top_defs.get(current)
@@ -148,6 +157,20 @@ class ProgramSlicer:
                 refs.add(child.value.id)
         return refs
 
+    def _should_retain_node(
+        self, node: ast.AST, needed_syms: Set[str], needed_imports: Set[ast.AST]
+    ) -> bool:
+        """Determines whether an AST statement node should be retained in the slice."""
+        if node in needed_imports:
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            return node.name in needed_syms
+        if isinstance(node, ast.Assign):
+            return any(isinstance(t, ast.Name) and t.id in needed_syms for t in node.targets)
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            return node.target.id in needed_syms
+        return False
+
     def _build_retained_nodes(
         self,
         tree: ast.Module,
@@ -155,17 +178,7 @@ class ProgramSlicer:
         needed_imports: Set[ast.AST],
     ) -> List[ast.AST]:
         """Filters module body retaining only needed imports and definitions."""
-        retained: List[ast.AST] = []
-        for node in tree.body:
-            if node in needed_imports:
-                retained.append(node)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                if node.name in needed_syms:
-                    retained.append(node)
-            elif isinstance(node, ast.Assign):
-                if any(isinstance(t, ast.Name) and t.id in needed_syms for t in node.targets):
-                    retained.append(node)
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                if node.target.id in needed_syms:
-                    retained.append(node)
-        return retained
+        return [
+            node for node in tree.body
+            if self._should_retain_node(node, needed_syms, needed_imports)
+        ]

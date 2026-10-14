@@ -6,6 +6,8 @@ authorisation without wiring the anchor, delta algebra, provenance DAG or capabi
 by hand. Mirrors ``agent_poi.facade.FinancialGuard`` for cross-platform consistency.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -258,6 +260,145 @@ class DevGuard:
             else None,
         )
 
+    def _evaluate_mutation_gates(
+        self,
+        intent: IntentContract,
+        delta: MutationDelta,
+        nonce: Optional[str],
+        mutation_node: Any,
+    ) -> VerificationResult:
+        """Evaluates provenance, capability, invariant, and freshness gates."""
+        provenance_ok, provenance_msgs = self.provenance.verify_mutation_authority(mutation_node.node_id)
+        provenance_violations = [self._split_provenance(msg) for msg in provenance_msgs]
+        capability_violations = self.capability.validate(delta) if self.capability else []
+        invariant_violations = list(self.verifier.verify(intent, delta, capability=self.capability))
+        if self.verifier._on("enforce_policy_files"):
+            injection_hits = self.screen_mutation_content(delta.new_content)
+            if injection_hits:
+                invariant_violations.append(
+                    InvariantViolation(
+                        "I1",
+                        f"mutation content contains prompt injection directives: {injection_hits}.",
+                    )
+                )
+
+        return self._build_result(
+            intent=intent,
+            delta=delta,
+            invariant_violations=invariant_violations,
+            provenance_violations=provenance_violations,
+            capability_violations=capability_violations,
+            freshness_violations=self._freshness_violations(nonce),
+        )
+
+    def _finalize_approved_mutation(
+        self,
+        delta: MutationDelta,
+        intent_id: str,
+        nonce: Optional[str],
+        result: VerificationResult,
+    ) -> MutationVerdict:
+        """Applies delta, logs architectural decision, and returns approved verdict."""
+        self._apply(delta)
+        self._record(delta, intent_id, nonce, "approved")
+        self.arch_ledger.record_decision(
+            feature=f"Mutation {delta.path} ({delta.op.value})",
+            how=f"Applied delta to {delta.path}",
+            why=f"Intent: {intent_id}",
+            connections=[],
+            elements_used=[delta.path],
+            graph_root=self.anchor.tree_oid(),
+        )
+        return MutationVerdict(
+            is_applied=True,
+            status="APPROVED",
+            intent_id=intent_id,
+            mutation_path=delta.path,
+            action_taken="applied",
+            delta=delta,
+            provenance_hash=result.provenance_hash,
+        )
+
+    def _finalize_blocked_mutation(
+        self,
+        delta: MutationDelta,
+        intent_id: str,
+        nonce: Optional[str],
+        result: VerificationResult,
+    ) -> MutationVerdict:
+        """Audits quarantine event and returns blocked verdict."""
+        self._audit(delta, intent_id, nonce, "blocked", result)
+        verdict = MutationVerdict(
+            is_applied=False,
+            status="BLOCKED",
+            intent_id=intent_id,
+            mutation_path=delta.path,
+            action_taken="quarantined",
+            violations=[ViolationItem(v.code, v.message) for v in result.violations],
+            violation_codes=result.violation_codes,
+            delta=delta,
+            provenance_hash=result.provenance_hash,
+        )
+        if self.raise_on_violation and not verdict.is_applied:
+            self._raise(verdict)
+        return verdict
+
+    def _create_mutation_node_and_delta(
+        self,
+        mutation: CodeMutation,
+        intent_id: str,
+        mutation_origin: SourceOrigin,
+        parent_node_ids: Optional[List[str]],
+    ) -> Tuple[Any, MutationDelta]:
+        """Creates provenance node for proposed mutation and extracts its AST delta."""
+        parents = list(parent_node_ids or [])
+        parents.append(self._intent_nodes[intent_id])
+        parents.extend(self._context_nodes)
+        node = self.provenance.add_node(
+            content=f"mutation:{mutation.path}:{mutation.op.value}",
+            origin=mutation_origin,
+            parent_ids=parents,
+        )
+        delta = self.delta_extractor.extract(
+            mutation,
+            provenance_node_id=node.node_id,
+            previous_content=self.workspace.get(mutation.path),
+        )
+        return node, delta
+
+    def _handle_permissive(
+        self, delta: MutationDelta, intent_id: str, nonce: Optional[str], mutation_node: Any
+    ) -> MutationVerdict:
+        """Applies mutation under PERMISSIVE policy bypass."""
+        self._apply(delta)
+        self._record(delta, intent_id, nonce, "approved_permissive")
+        return MutationVerdict(
+            is_applied=True,
+            status="APPROVED",
+            intent_id=intent_id,
+            mutation_path=delta.path,
+            action_taken="applied_permissive",
+            delta=delta,
+            provenance_hash=mutation_node.sha256_hash,
+        )
+
+    def _handle_monitoring(
+        self, delta: MutationDelta, intent_id: str, nonce: Optional[str], result: VerificationResult
+    ) -> MutationVerdict:
+        """Audits mutation without mutation under MONITORING policy."""
+        self._audit(delta, intent_id, nonce, "monitored", result)
+        return MutationVerdict(
+            is_applied=False,
+            status="MONITORED",
+            intent_id=intent_id,
+            mutation_path=delta.path,
+            action_taken="monitoring_logged",
+            violations=[ViolationItem(v.code, v.message) for v in result.violations],
+            violation_codes=result.violation_codes,
+            delta=delta,
+            provenance_hash=result.provenance_hash,
+        )
+
     def propose_mutation(
         self,
         mutation: CodeMutation,
@@ -279,108 +420,19 @@ class DevGuard:
                 violation_codes=["I0"],
             )
 
-        parents = list(parent_node_ids or [])
-        parents.append(self._intent_nodes[intent_id])
-        parents.extend(self._context_nodes)
-        mutation_node = self.provenance.add_node(
-            content=f"mutation:{mutation.path}:{mutation.op.value}",
-            origin=mutation_origin,
-            parent_ids=parents,
+        mutation_node, delta = self._create_mutation_node_and_delta(
+            mutation, intent_id, mutation_origin, parent_node_ids
         )
-
-        delta = self.delta_extractor.extract(
-            mutation,
-            provenance_node_id=mutation_node.node_id,
-            previous_content=self.workspace.get(mutation.path),
-        )
-
         if self.policy == GuardPolicy.PERMISSIVE:
-            self._apply(delta)
-            self._record(delta, intent_id, nonce, "approved_permissive")
-            return MutationVerdict(
-                is_applied=True,
-                status="APPROVED",
-                intent_id=intent_id,
-                mutation_path=delta.path,
-                action_taken="applied_permissive",
-                delta=delta,
-                provenance_hash=mutation_node.sha256_hash,
-            )
+            return self._handle_permissive(delta, intent_id, nonce, mutation_node)
 
-        provenance_ok, provenance_msgs = self.provenance.verify_mutation_authority(mutation_node.node_id)
-        provenance_violations = [self._split_provenance(msg) for msg in provenance_msgs]
-        capability_violations = self.capability.validate(delta) if self.capability else []
-        invariant_violations = list(self.verifier.verify(intent, delta, capability=self.capability))
-        if self.verifier._on("enforce_policy_files"):
-            injection_hits = self.screen_mutation_content(delta.new_content)
-            if injection_hits:
-                invariant_violations.append(
-                    InvariantViolation(
-                        "I1",
-                        f"mutation content contains prompt injection directives: {injection_hits}.",
-                    )
-                )
-
-        result = self._build_result(
-            intent=intent,
-            delta=delta,
-            invariant_violations=invariant_violations,
-            provenance_violations=provenance_violations,
-            capability_violations=capability_violations,
-            freshness_violations=self._freshness_violations(nonce),
-        )
-
+        result = self._evaluate_mutation_gates(intent, delta, nonce, mutation_node)
         if self.policy == GuardPolicy.MONITORING:
-            self._audit(delta, intent_id, nonce, "monitored", result)
-            return MutationVerdict(
-                is_applied=False,
-                status="MONITORED",
-                intent_id=intent_id,
-                mutation_path=delta.path,
-                action_taken="monitoring_logged",
-                violations=[ViolationItem(v.code, v.message) for v in result.violations],
-                violation_codes=result.violation_codes,
-                delta=delta,
-                provenance_hash=result.provenance_hash,
-            )
+            return self._handle_monitoring(delta, intent_id, nonce, result)
 
         if result.is_executable:
-            self._apply(delta)
-            self._record(delta, intent_id, nonce, "approved")
-            self.arch_ledger.record_decision(
-                feature=f"Mutation {delta.path} ({delta.op.value})",
-                how=f"Applied delta to {delta.path}",
-                why=f"Intent: {intent_id}",
-                connections=[],
-                elements_used=[delta.path],
-                graph_root=self.anchor.tree_oid(),
-            )
-            verdict = MutationVerdict(
-                is_applied=True,
-                status="APPROVED",
-                intent_id=intent_id,
-                mutation_path=delta.path,
-                action_taken="applied",
-                delta=delta,
-                provenance_hash=result.provenance_hash,
-            )
-        else:
-            self._audit(delta, intent_id, nonce, "blocked", result)
-            verdict = MutationVerdict(
-                is_applied=False,
-                status="BLOCKED",
-                intent_id=intent_id,
-                mutation_path=delta.path,
-                action_taken="quarantined",
-                violations=[ViolationItem(v.code, v.message) for v in result.violations],
-                violation_codes=result.violation_codes,
-                delta=delta,
-                provenance_hash=result.provenance_hash,
-            )
-
-        if self.raise_on_violation and not verdict.is_applied:
-            self._raise(verdict)
-        return verdict
+            return self._finalize_approved_mutation(delta, intent_id, nonce, result)
+        return self._finalize_blocked_mutation(delta, intent_id, nonce, result)
 
     # Backwards/forwards-compatible alias mirroring FinancialGuard.protect.
     def protect(self, mutation: CodeMutation, intent_id: str, **kwargs) -> MutationVerdict:

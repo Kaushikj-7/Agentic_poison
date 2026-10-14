@@ -130,6 +130,30 @@ class TestSlicerSecurityValidator:
         assert res.is_safe is False
         assert "eval" in res.dangerous_calls
 
+    def test_aliased_dangerous_call_rejected(self):
+        validator = SlicerSecurityValidator()
+        code = 'import subprocess as sp\ndef run_cmd():\n    sp.run(["whoami"])\n'
+        res = validator.validate(code)
+
+        assert res.is_safe is False
+        assert "subprocess.run" in res.dangerous_calls
+
+    def test_import_from_dangerous_call_rejected(self):
+        validator = SlicerSecurityValidator()
+        code = 'from os import system\ndef execute(cmd):\n    system(cmd)\n'
+        res = validator.validate(code)
+
+        assert res.is_safe is False
+        assert "os.system" in res.dangerous_calls
+
+    def test_future_import_preserved(self):
+        slicer = ProgramSlicer()
+        code = 'from __future__ import annotations\ndef typed_func(x: UnknownType) -> None:\n    pass\n'
+        res = slicer.slice_symbol(code, "typed_func")
+
+        assert res.is_valid is True
+        assert "from __future__ import annotations" in res.sliced_code
+
 
 class TestComponentHarvester:
     """Tests for end-to-end component harvesting."""

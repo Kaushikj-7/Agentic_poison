@@ -87,23 +87,44 @@ class SlicerSecurityValidator:
                 found.append(marker)
         return found
 
+    def _build_alias_map(self, tree: ast.AST) -> dict[str, str]:
+        """Maps local identifiers and aliases to qualified module/function names."""
+        aliases: dict[str, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    local_name = alias.asname or alias.name
+                    aliases[local_name] = alias.name
+            elif isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+                for alias in node.names:
+                    local_name = alias.asname or alias.name
+                    full_name = f"{mod}.{alias.name}" if mod else alias.name
+                    aliases[local_name] = full_name
+        return aliases
+
     def _scan_dangerous_ast(self, tree: ast.AST) -> List[str]:
         """Inspects AST nodes for dangerous or prohibited function invocations."""
+        aliases = self._build_alias_map(tree)
         dangerous: List[str] = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
-                name = self._resolve_call_name(node.func)
+                name = self._resolve_call_name(node.func, aliases)
                 if name in self.DANGEROUS_BUILTINS:
                     dangerous.append(name)
-                elif not self.allow_shell and name in self.DANGEROUS_MODULE_ATTRS:
+                elif not self.allow_shell and (
+                    name in self.DANGEROUS_MODULE_ATTRS or name.startswith("subprocess.")
+                ):
                     dangerous.append(name)
         return dangerous
 
-    def _resolve_call_name(self, node: ast.AST) -> str:
-        """Extracts dotted call name (e.g., 'os.system' or 'eval')."""
+    def _resolve_call_name(self, node: ast.AST, aliases: Optional[dict[str, str]] = None) -> str:
+        """Extracts dotted call name with alias expansion (e.g., 'sp.run' -> 'subprocess.run')."""
         if isinstance(node, ast.Name):
+            if aliases and node.id in aliases:
+                return aliases[node.id]
             return node.id
         if isinstance(node, ast.Attribute):
-            prefix = self._resolve_call_name(node.value)
+            prefix = self._resolve_call_name(node.value, aliases)
             return f"{prefix}.{node.attr}" if prefix else node.attr
         return ""

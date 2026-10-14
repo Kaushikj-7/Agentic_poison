@@ -78,15 +78,28 @@ class FrontendCallExtractor:
             )
 
     def _parse_object_keys(self, obj_literal: str) -> List[str]:
-        """Extracts top-level property keys from an object literal string."""
+        """Extracts top-level property keys from an object literal string,
+        supporting multiline, single-line, and ES6 shorthand notations."""
         if not obj_literal:
             return []
         keys: List[str] = []
-        for line in obj_literal.splitlines():
-            clean = line.strip().rstrip(",")
-            m = re.match(r"^['\"]?([a-zA-Z0-9_]+)['\"]?\s*:", clean)
-            if m:
-                keys.append(m.group(1))
+        # Strip nested braces and brackets to isolate top-level keys
+        cleaned = re.sub(r"\{[^{}]*\}", "", obj_literal)
+        cleaned = re.sub(r"\[[^\[\]]*\]", "", cleaned)
+
+        for part in cleaned.split(","):
+            item = part.strip()
+            if not item:
+                continue
+            # Handle key: value or "key": value
+            m_kv = re.match(r"^['\"]?([a-zA-Z0-9_]+)['\"]?\s*:", item)
+            if m_kv:
+                keys.append(m_kv.group(1))
+                continue
+            # Handle ES6 shorthand property: { payee_id, amount }
+            m_short = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)$", item)
+            if m_short:
+                keys.append(m_short.group(1))
         return keys
 
     def _parse_fetch_body_keys(self, options_block: str) -> List[str]:
