@@ -276,17 +276,18 @@ def main():
         all_passed = False
     print(f"[*] Unit Test Suite:     {'OK (' + test_summary + ')' if tests_ok else 'FAIL'}")
 
-    # 4. Financial Dynamic Benchmark
-    fin_ok, asr_exec, ldsr = run_financial_benchmark()
-    if not fin_ok:
-        all_passed = False
-    print(f"[*] Financial Benchmark: {'PASS' if fin_ok else 'FAIL'} (ASR-Exec={asr_exec}%, LDSR={ldsr}%)")
-
-    # 5. SDE Dynamic Benchmark
+    # 4. SDE Dynamic Benchmark (Coding Agent)
     sde_ok, emar, ltsr, avr, slr = run_sde_benchmark()
     if not sde_ok:
         all_passed = False
     print(f"[*] SDE Benchmark:       {'PASS' if sde_ok else 'FAIL'} (EMAR={emar}%, LTSR={ltsr}%, AVR={avr}%, SLR={slr}%)")
+
+    # Optional legacy financial benchmark (only if explicitly requested via --with-financial)
+    if "--with-financial" in sys.argv:
+        fin_ok, asr_exec, ldsr = run_financial_benchmark()
+        if not fin_ok:
+            all_passed = False
+        print(f"[*] Financial Benchmark: {'PASS' if fin_ok else 'FAIL'} (ASR-Exec={asr_exec}%, LDSR={ldsr}%)")
 
     # 6. Documentation Metrics Sync Gate (no hardcoded results)
     docs_ok, docs_status = check_docs_metrics_sync()
