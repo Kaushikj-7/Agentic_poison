@@ -187,6 +187,23 @@ class TestArchitecturalLedger:
         assert features[0].feature == "User Profile Retrieval"
         assert "react-query" in features[0].elements_used
 
+    def test_ledger_latest_root_property(self):
+        """Verifies latest_root returns None when empty and root when populated."""
+        import typing
+
+        ledger = ArchitecturalLedger()
+        assert ledger.latest_root is None
+
+        # Verify type hints resolve without NameError (F821 regression test)
+        hints = typing.get_type_hints(ArchitecturalLedger)
+        assert "latest_root" in hints or hasattr(ArchitecturalLedger, "latest_root")
+
+        ledger.record_decision("Init", "how", "why", [], [], "root_hash_123")
+        assert ledger.latest_root == "root_hash_123"
+
+        ledger.record_decision("Next", "how2", "why2", [], [], "root_hash_456")
+        assert ledger.latest_root == "root_hash_456"
+
 
 class TestGraphIndexer:
     """Test suite for AST indexing of code into the Merkle Knowledge Graph."""

@@ -1,8 +1,6 @@
 """Unit tests verifying all fixes from the external architecture and code audit report."""
 
 import hashlib
-import os
-import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -17,8 +15,7 @@ from agentpoi_sde.domain import CodeMutation, GuardPolicy, MutationDelta, Mutati
 from agentpoi_sde.eval.repo_sandbox import DEFAULT_FILES, LOCKED_ENGINE, RepoSandbox
 from agentpoi_sde.facade import DevGuard
 from agentpoi_sde.sandbox.isolated_sandbox import IsolatedConfigurationSandbox
-from agentpoi_sde.sink.atomic_writer import AtomicDiskTransaction, AtomicDiskWriter
-
+from agentpoi_sde.sink.atomic_writer import AtomicDiskWriter
 
 # ---------------------------------------------------------------------------
 # Finding 1: Git Diff Baseline & Reversed staged/unstaged Base Selection

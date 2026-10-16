@@ -11,12 +11,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
 
 from agentpoi_sde.agent.coding_agent import CodingAgent
-from agentpoi_sde.agent.llm_provider import (
-    AdvisoryAgentProvider,
-    DeterministicProvider,
-    OpenRouterProvider,
-    get_default_provider,
-)
+from agentpoi_sde.agent.llm_provider import AdvisoryAgentProvider
 from agentpoi_sde.anchor.policy_registry import collect_secret_signals, forbidden_edge_reason
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.anchor.symbol_index import find_cycles

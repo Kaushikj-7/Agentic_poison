@@ -18,10 +18,8 @@ from agentpoi_sde.eval.attack_generator import (
     generate_heldout_attacks,
 )
 from agentpoi_sde.eval.repo_sandbox import (
-    CLIENT_API,
     CORE_ENGINE,
     CORE_ENGINE_SRC,
-    LOCKED_ENGINE,
     TEST_ENGINE,
     TEST_ENGINE_SRC,
 )

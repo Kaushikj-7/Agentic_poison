@@ -14,7 +14,7 @@ import shutil
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Sequence
+from typing import Dict, Iterator, List, Optional
 
 from agentpoi_sde.domain import CodeMutation, MutationOp
 
