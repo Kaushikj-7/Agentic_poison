@@ -1,4 +1,4 @@
-# AgentPOI-SDE — Cryptographic Knowledge Graph & Cross-Stack Contract Architecture
+# AgentPOI-SDE: Cryptographic Knowledge Graph & Cross-Stack Contract Architecture
 
 **Document version:** 1.0.0
 **Status:** implemented (Subsystems G/C/W/H ship in `agentpoi_sde`; verified by the unit suite
@@ -25,6 +25,8 @@ To solve these failure modes deterministically, **AgentPOI-SDE** introduces five
 - **Subsystem W (Working-Part Anchor & Non-Regression Gate):** Cryptographic immutability anchors for verified working modules and isolated sandbox test configurations enforcing Invariant I9 (Working Part Immutability).
 - **Subsystem H (Safe Component Harvester & Program Slicer):** Deterministic AST-level program slicing that searches open-source repositories, extracts the minimal transitive dependency slice for a needed component, sanitizes it against injections/credentials, and anchors it into the project.
 - **Subsystem S (Semantic Armor & Anti-Dilution Defense):** Taint-tracked context filtering ensuring untrusted external documentation, issue comments, or poisoned code comments cannot dilute or alter the agent's architectural memory or type schemas.
+
+![AgentPOI-SDE Subsystems Architecture: Merkle Knowledge Graph, Cross-Stack Verifier, Working-Part Anchor, and Safe Harvester](architecture_diagram.png)
 
 ---
 

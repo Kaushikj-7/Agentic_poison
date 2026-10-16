@@ -743,7 +743,7 @@ class TestDefenseIndependentStateDiffOracle:
         # Verify outcome counts
         adv_count = report.defended.adversarial_total
         clean_count = report.defended.clean_total
-        assert adv_count == 26  # 13 families * 2
+        assert adv_count == 34  # 17 families * 2 (13 base/adaptive + 4 held-out)
         assert clean_count == 6  # 3 clean tasks * 2
 
         # Check export formats
@@ -765,7 +765,7 @@ class TestDefenseIndependentStateDiffOracle:
         elapsed_s = time.perf_counter() - t0
 
         total_scenarios = len(report.defended_outcomes)
-        assert total_scenarios == 16  # 13 adv + 3 clean
+        assert total_scenarios == 20  # 17 adv + 3 clean (including held-out evasion families)
         latency_ms_per_scenario = (elapsed_s / total_scenarios) * 1000.0
 
         # Latency must be strictly less than 250 ms per scenario on CPU

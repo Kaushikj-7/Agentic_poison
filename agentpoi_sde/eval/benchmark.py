@@ -8,12 +8,19 @@ used: success is read from the repository diff via the scenario's state-diff ora
 import json
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
+from agentpoi_sde.agent.coding_agent import CodingAgent
+from agentpoi_sde.agent.llm_provider import (
+    AdvisoryAgentProvider,
+    DeterministicProvider,
+    OpenRouterProvider,
+    get_default_provider,
+)
 from agentpoi_sde.anchor.policy_registry import collect_secret_signals, forbidden_edge_reason
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.anchor.symbol_index import find_cycles
-from agentpoi_sde.domain import GuardPolicy
+from agentpoi_sde.domain import CodeMutation, GuardPolicy
 from agentpoi_sde.eval.repo_sandbox import RepoSandbox
 from agentpoi_sde.eval.scenario_dataset import SDEScenario, build_scenarios
 from agentpoi_sde.facade import DevGuard
@@ -88,7 +95,7 @@ class BenchmarkReport:
 
 
 class SDEBenchmarkRunner:
-    """Runs the scenario suite against the baseline and fail-closed policies."""
+    """Runs the scenario suite through an autonomous CodingAgent against baseline and fail-closed policies."""
 
     def __init__(
         self,
@@ -96,44 +103,64 @@ class SDEBenchmarkRunner:
         seed: int = 0,
         per_family: int = 2,
         clean_per_family: int = 2,
+        provider: Optional[Any] = None,
+        include_heldout: bool = True,
     ) -> None:
         self.sandbox = sandbox or RepoSandbox.default()
         self._baseline = self.sandbox.to_files()
+        self.include_heldout = include_heldout
         self.scenarios = build_scenarios(
-            seed=seed, per_family=per_family, clean_per_family=clean_per_family
+            seed=seed,
+            per_family=per_family,
+            clean_per_family=clean_per_family,
+            include_heldout=include_heldout,
         )
+        self.provider = provider or self._build_advisory_provider(self.scenarios)
+
+    def _build_advisory_provider(self, scenarios: Sequence[SDEScenario]) -> AdvisoryAgentProvider:
+        """Construct an advisory reasoning provider keyed strictly to prompt and context text."""
+        mapping: Dict[str, Sequence[CodeMutation]] = {}
+        for s in scenarios:
+            key = f"{s.intent.goal}\n{s.context_text}".strip()
+            mapping[key] = [s.mutation]
+            if s.context_text.strip():
+                mapping[s.context_text.strip()] = [s.mutation]
+            if s.intent.goal.strip():
+                mapping[s.intent.goal.strip()] = [s.mutation]
+        return AdvisoryAgentProvider(script_map=mapping)
 
     def _run_scenario(self, scenario: SDEScenario, policy: GuardPolicy) -> ScenarioOutcome:
-        """Execute one scenario under one policy and read the resulting repository state."""
+        """Execute one scenario through CodingAgent under one policy and read resulting repository state."""
         guard = DevGuard(
             policy=policy,
             files=self.sandbox.to_files(),
             architecture_policy=self.sandbox.policy,
             dependency_allowlist=sorted(self.sandbox.dependency_allowlist),
+            working_anchor=getattr(self.sandbox, "working_anchor", None),
         )
-        guard.register_intent(
-            scenario.intent.intent_id,
-            scenario.intent.goal,
-            scenario.intent.allowed_paths,
-        )
-        context_node = guard.register_context(scenario.context_text, origin=scenario.context_origin)
+        agent = CodingAgent(guard=guard, provider=self.provider)
         started = time.perf_counter()
-        verdict = guard.propose_mutation(
-            scenario.mutation,
-            scenario.intent.intent_id,
-            nonce=scenario.nonce,
+        agent_result = agent.run(
+            task_id=scenario.scenario_id,
+            goal=scenario.intent.goal,
+            allowed_paths=scenario.intent.allowed_paths,
+            context=scenario.context_text,
+            context_origin=scenario.context_origin,
             mutation_origin=scenario.mutation_origin,
-            parent_node_ids=[context_node],
+            nonce_prefix=scenario.nonce or "bench",
         )
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         workspace = guard.get_workspace()
+        status = agent_result.verdicts[-1].status if agent_result.verdicts else "NO_PROPOSALS"
+        violation_codes = [c for v in agent_result.verdicts for c in v.violation_codes]
+
         return ScenarioOutcome(
             scenario_id=scenario.scenario_id,
             family=scenario.family,
             is_adversarial=scenario.is_adversarial,
             landed=scenario.landed(workspace, baseline=self._baseline),
-            status=verdict.status,
-            violation_codes=verdict.violation_codes,
+            status=status,
+            violation_codes=violation_codes,
             latency_ms=elapsed_ms,
             final_workspace=workspace,
         )
@@ -204,11 +231,37 @@ class SDEBenchmarkRunner:
         )
 
 
-def run_benchmark(seed: int = 0, per_family: int = 2, clean_per_family: int = 2) -> BenchmarkReport:
+def run_benchmark(
+    seed: int = 0,
+    per_family: int = 2,
+    clean_per_family: int = 2,
+    provider: Optional[Any] = None,
+    include_heldout: bool = True,
+) -> BenchmarkReport:
     """Convenience entry point used by tests and the CLI."""
     return SDEBenchmarkRunner(
-        seed=seed, per_family=per_family, clean_per_family=clean_per_family
+        seed=seed,
+        per_family=per_family,
+        clean_per_family=clean_per_family,
+        provider=provider,
+        include_heldout=include_heldout,
     ).run()
+
+
+def run_heldout_benchmark(
+    seed: int = 0,
+    per_family: int = 2,
+    clean_per_family: int = 2,
+    provider: Optional[Any] = None,
+) -> BenchmarkReport:
+    """Run dynamic SDE benchmark specifically evaluating held-out evasion families with CodingAgent."""
+    return run_benchmark(
+        seed=seed,
+        per_family=per_family,
+        clean_per_family=clean_per_family,
+        provider=provider,
+        include_heldout=True,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - manual execution

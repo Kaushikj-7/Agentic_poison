@@ -110,6 +110,7 @@ DEVELOPER_ONLY_RULES: List[str] = [
     "docs/SURVEY_AND_PAPERS.md",
     "docs/RESEARCH_NOVELTY_LEDGER.md",
     "docs/BENCHMARK_METHODOLOGY.md",
+    "docs/AUDIT.md",
     # Config files that may contain local paths
     "config.yaml",
     "agent_poi/config.yaml",
@@ -119,6 +120,8 @@ DEVELOPER_ONLY_RULES: List[str] = [
     "scripts/paper_tutor.py",
     "scripts/demo_vault_story.py",
     "scripts/audit_workspace_mistakes.py",
+    "scripts/generate_architecture_diagram.py",
+    "scripts/generate_arch_diagram.py",
     "agent_poi/education/**",
     "agent_poi/education/*",
     "agent_poi/research/paper_tutor.py",
@@ -148,6 +151,7 @@ PUBLIC_EXPLICIT: List[str] = [
     "agentpoi_sde/**/*.py",
     # Public tests
     "tests/*.py",
+    "tests/**/*.py",
     "tests/conftest.py",
     # Packaging & CI
     "pyproject.toml",
@@ -160,12 +164,18 @@ PUBLIC_EXPLICIT: List[str] = [
     "docs/ARCHITECTURE.md",
     "docs/DEVELOPMENT.md",
     "docs/MATHEMATICAL_FORMULATION.md",
+    "docs/SDE_ARCHITECTURE.md",
+    "docs/CRYPTOGRAPHIC_GRAPH_ARCHITECTURE.md",
+    "docs/NOVELTY_GAP.md",
     "docs/figures/*",
+    "docs/*.png",
     # Production scripts
     "scripts/ci_check.py",
     "scripts/git_guardian.py",
     "scripts/run_experiment_pipeline.py",
     "scripts/run_ruthless_paper_benchmark.py",
+    "scripts/generate_sde_architecture_diagram.py",
+    "scripts/render_sde_metrics.py",
 ]
 
 

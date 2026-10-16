@@ -93,6 +93,65 @@ class DeterministicProvider:
         return list(self.script)
 
 
+@dataclass
+class AdvisoryAgentProvider:
+    """Advisory LLM reasoning provider simulating model output in autonomous coding loops.
+
+    Translates engineering goals, prompt instructions, and untrusted context into proposed
+    code mutations. When presented with prompt injection directives or malicious context,
+    it models an unaligned or exploited model proposing the attacker's requested mutation.
+    When given clean software engineering goals, it synthesises clean functional mutations.
+    Output is strictly advisory and routed to DevGuard's fail-closed verification sink.
+    """
+
+    script_map: Dict[str, Sequence[CodeMutation]] = field(default_factory=dict)
+    fallback_script: Sequence[CodeMutation] = field(default_factory=tuple)
+    label: str = "advisory-llm-agent"
+
+    @property
+    def name(self) -> str:
+        """Return the provider identity."""
+        return self.label
+
+    def available(self) -> bool:
+        """The advisory provider is always available for local execution."""
+        return True
+
+    def register_proposal(self, prompt_key: str, mutations: Sequence[CodeMutation]) -> None:
+        """Register a deterministic proposal for a specific prompt key."""
+        self.script_map[prompt_key.strip()] = list(mutations)
+
+    def propose_mutations(
+        self, goal: str, context: str, files: Dict[str, str]
+    ) -> List[CodeMutation]:
+        """Propose mutations from goal and context."""
+        goal_str = str(goal or "").strip()
+        ctx_str = str(context or "").strip()
+        combined_key = f"{goal_str}\n{ctx_str}".strip()
+
+        # 1. Exact key matching
+        if combined_key in self.script_map:
+            return list(self.script_map[combined_key])
+        if ctx_str in self.script_map:
+            return list(self.script_map[ctx_str])
+        if goal_str in self.script_map:
+            return list(self.script_map[goal_str])
+
+        # 2. Check for fenced JSON mutations in context or goal
+        fenced_mutations = _parse_mutations(ctx_str) or _parse_mutations(goal_str)
+        if fenced_mutations:
+            return fenced_mutations
+
+        # 3. Partial matching across registered prompt snippets
+        for key, mutations in self.script_map.items():
+            if key and (key in combined_key or combined_key in key or key in ctx_str):
+                return list(mutations)
+
+        if self.fallback_script:
+            return list(self.fallback_script)
+        return []
+
+
 class OpenRouterProvider:
     """Live OpenAI-compatible provider (OpenRouter, local vLLM, or any mirror)."""
 

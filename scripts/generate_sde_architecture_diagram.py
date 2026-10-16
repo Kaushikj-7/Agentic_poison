@@ -220,22 +220,22 @@ def generate_diagram(output_path: str, report: Optional[BenchmarkReport] = None)
 
     # -- Tier 2: repository state anchor R0 --------------------------------------
     panel("tier2-anchor", 5.3, 7.05, 5.1, 1.85, C["t1f"], C["t1"], lw=1.8)
-    draw_title(ax, 5.5, 8.62, "Tier 2 — Repository State Anchor ℛ₀", C["t1"], 10.5)
+    draw_title(ax, 5.5, 8.62, "Tier 2 — State Anchor ℛ₀ & Working Parts (Subsystem W)", C["t1"], 10.5)
     draw_bullets(ax, 5.5, 8.26, [
         "Content-addressed git tree OID (SHA-256 manifest)",
+        "Working-part immutability anchor & isolated test sandbox",
         "AST symbol table + import graph, cycle detection",
-        "Lockfile dependencies, layered architecture policy",
-        "Executable ADRs (D1) + working-part registry (I9)",
+        "Lockfile dependencies, layered architecture policy (D1)",
     ], C["text"], step=0.30)
 
     # -- Tier 3: mutation delta ---------------------------------------------------
     panel("tier3-delta", 5.3, 4.85, 5.1, 1.75, C["t2f"], C["t2d"], lw=1.4)
-    draw_title(ax, 5.5, 6.32, "Tier 3 — Mutation Delta Δ(edit)", C["t2d"], 10.5)
+    draw_title(ax, 5.5, 6.32, "Tier 3 — Delta Δ(edit) & Slicer (Subsystems C, H)", C["t2d"], 10.5)
     draw_bullets(ax, 5.5, 5.96, [
-        "Fail-closed unified diff parser (path containment)",
-        "Syntax pre-parse (ast.parse) + patch hash",
-        "Import delta, secret tokens, egress endpoints",
-        "Cross-stack call/route contract extraction",
+        "Cross-stack frontend/backend contract extraction (Subsystem C)",
+        "Safe OSS component harvester & AST program slicer (Subsystem H)",
+        "Fail-closed unified diff parser (path containment, no traversal)",
+        "Syntax pre-parse (ast.parse), secrets & egress inspection",
     ], C["text"], step=0.30)
 
     # -- Tier 4: invariant verification ------------------------------------------
@@ -248,11 +248,12 @@ def generate_diagram(output_path: str, report: Optional[BenchmarkReport] = None)
 
     # -- Tier 5: provenance, capability and the cryptographic graph --------------
     panel("tier5-provenance", 5.3, 2.65, 5.1, 1.75, C["t4f"], C["t4d"], lw=1.4)
-    draw_title(ax, 5.5, 4.12, "Tier 5 — Provenance P, Capability κ, Freshness", C["t4d"], 10.5)
+    draw_title(ax, 5.5, 4.12, "Tier 5 — Merkle Graph & Ledger (Subsystem G)", C["t4d"], 10.5)
     draw_bullets(ax, 5.5, 3.76, [
-        "SHA-256 hash-chained lineage DAG per context node",
-        "Non-bypassable CapabilityScope tokens + nonce freshness",
-        "Merkle knowledge graph + architectural ledger (what/how/why)",
+        "Cryptographic Merkle Knowledge Graph G_merkle (SHA-256 root)",
+        "Architectural Ledger ArchLedger (unforgeable what/how/why blocks)",
+        "SHA-256 hash-chained provenance DAG P lineage per context node",
+        "Non-bypassable CapabilityScope tokens κ + nonce freshness",
     ], C["text"], step=0.30)
 
     # -- Tier 6: fail-closed sink -------------------------------------------------

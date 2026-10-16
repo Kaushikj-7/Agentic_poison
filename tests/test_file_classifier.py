@@ -39,6 +39,27 @@ class TestFileClassifierPublicFiles:
     def test_architecture_doc(self):
         assert classify_file("docs/ARCHITECTURE.md") == FileClass.PUBLIC
 
+    def test_sde_architecture_doc(self):
+        assert classify_file("docs/SDE_ARCHITECTURE.md") == FileClass.PUBLIC
+
+    def test_cryptographic_graph_doc(self):
+        assert classify_file("docs/CRYPTOGRAPHIC_GRAPH_ARCHITECTURE.md") == FileClass.PUBLIC
+
+    def test_development_doc(self):
+        assert classify_file("docs/DEVELOPMENT.md") == FileClass.PUBLIC
+
+    def test_novelty_gap_doc(self):
+        assert classify_file("docs/NOVELTY_GAP.md") == FileClass.PUBLIC
+
+    def test_sde_architecture_diagram(self):
+        assert classify_file("docs/sde_architecture_diagram.png") == FileClass.PUBLIC
+
+    def test_sde_diagram_script(self):
+        assert classify_file("scripts/generate_sde_architecture_diagram.py") == FileClass.PUBLIC
+
+    def test_render_sde_metrics_script(self):
+        assert classify_file("scripts/render_sde_metrics.py") == FileClass.PUBLIC
+
     def test_architecture_figures(self):
         assert classify_file("docs/figures/architecture.jpg") == FileClass.PUBLIC
 
@@ -91,6 +112,18 @@ class TestFileClassifierDeveloperOnly:
 
     def test_research_novelty(self):
         assert classify_file("docs/RESEARCH_NOVELTY_LEDGER.md") == FileClass.DEVELOPER_ONLY
+
+    def test_benchmark_methodology(self):
+        assert classify_file("docs/BENCHMARK_METHODOLOGY.md") == FileClass.DEVELOPER_ONLY
+
+    def test_audit_doc(self):
+        assert classify_file("docs/AUDIT.md") == FileClass.DEVELOPER_ONLY
+
+    def test_generate_architecture_diagram_script(self):
+        assert classify_file("scripts/generate_architecture_diagram.py") == FileClass.DEVELOPER_ONLY
+
+    def test_generate_arch_diagram_script(self):
+        assert classify_file("scripts/generate_arch_diagram.py") == FileClass.DEVELOPER_ONLY
 
     def test_config_yaml(self):
         assert classify_file("config.yaml") == FileClass.DEVELOPER_ONLY

@@ -66,3 +66,37 @@ def test_metrics_are_computed_and_distinguish_the_two_policies():
     assert report.defended.clean_total == report.baseline.clean_total
     assert report.defended.mean_latency_ms >= 0.0
     assert "AgentPOI-SDE" in report.to_markdown()
+
+
+def test_benchmark_uses_coding_agent_with_advisory_provider():
+    """Verify that SDEBenchmarkRunner runs via an actual CodingAgent and advisory provider."""
+    runner = SDEBenchmarkRunner(seed=42, per_family=1, clean_per_family=1)
+    assert runner.provider is not None
+    assert runner.provider.name == "advisory-llm-agent"
+    assert runner.provider.available() is True
+
+    report = runner.run()
+    assert report.baseline.adversarial_total > 0
+    assert report.defended.adversarial_total > 0
+    # Every outcome reflects real CodingAgent execution through DevGuard
+    for outcome in report.defended_outcomes:
+        assert outcome.status in ("APPROVED", "BLOCKED")
+
+
+def test_heldout_evasion_benchmark_execution():
+    """Verify that held-out evasion families are evaluated dynamically."""
+    from agentpoi_sde.eval.attack_generator import HELDOUT_EVASION_FAMILIES
+    from agentpoi_sde.eval.benchmark import run_heldout_benchmark
+    from agentpoi_sde.eval.scenario_dataset import generate_heldout_scenarios
+
+    heldout_scenarios = generate_heldout_scenarios(seed=99, per_family=1)
+    assert len(heldout_scenarios) == len(HELDOUT_EVASION_FAMILIES)
+    for sc in heldout_scenarios:
+        assert sc.family in HELDOUT_EVASION_FAMILIES
+        assert sc.is_adversarial is True
+
+    # Run heldout benchmark
+    report = run_heldout_benchmark(seed=99, per_family=1, clean_per_family=1)
+    assert report.baseline.emar == 100.0, "Undefended baseline must allow heldout attacks"
+    assert report.defended.emar == 0.0, "Defended AgentPOI-SDE must block heldout evasion families"
+    assert report.defended.ltsr == 100.0, "Clean tasks must succeed during heldout evaluation"

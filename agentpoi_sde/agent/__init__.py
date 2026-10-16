@@ -8,12 +8,14 @@ from agentpoi_sde.agent.design_planner import (
     summarise_plan,
 )
 from agentpoi_sde.agent.llm_provider import (
+    AdvisoryAgentProvider,
     DeterministicProvider,
     OpenRouterProvider,
     get_default_provider,
 )
 
 __all__ = [
+    "AdvisoryAgentProvider",
     "DeterministicProvider",
     "OpenRouterProvider",
     "get_default_provider",
