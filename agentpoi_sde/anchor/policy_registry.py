@@ -8,10 +8,20 @@ policy via ``ArchitecturePolicy``.
 
 import ast
 from fnmatch import fnmatch
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from agentpoi_sde.config_loader import get_protected_paths, get_test_markers
 from agentpoi_sde.domain import ArchitecturePolicy
+
+DEFAULT_LAYER_ROOTS: Dict[str, str] = {
+    "core": "core",
+    "domain": "domain",
+    "api": "api",
+}
+DEFAULT_FORBIDDEN_EDGES: Tuple[Tuple[str, str], ...] = (
+    ("core", "api"),
+    ("domain", "api"),
+)
 
 # Credential material that must never appear in a mutation (I3).
 # The name prefix is matched without a leading \b so SCREAMING_SNAKE constants such as
@@ -59,13 +69,14 @@ INJECTION_MARKERS: Tuple[str, ...] = (
 
 def default_policy(
     layer_roots: Optional[dict] = None,
-    forbidden_edges: Tuple[Tuple[str, str], ...] = (),
+    forbidden_edges: Optional[Tuple[Tuple[str, str], ...]] = None,
 ) -> ArchitecturePolicy:
     """Build an ``ArchitecturePolicy`` with the platform's default protected/test patterns."""
-    layers = layer_roots or {}
+    layers = layer_roots if layer_roots is not None else dict(DEFAULT_LAYER_ROOTS)
+    edges = forbidden_edges if forbidden_edges is not None else tuple(DEFAULT_FORBIDDEN_EDGES)
     return ArchitecturePolicy(
         layer_roots=dict(layers),
-        forbidden_edges=tuple(forbidden_edges),
+        forbidden_edges=tuple(edges),
         protected_paths=tuple(get_protected_paths()),
         test_markers=tuple(get_test_markers()),
     )

@@ -241,12 +241,12 @@ _Generated from a live execution of the 40-scenario suite: 34 adversarial mutati
 - **AVR / SLR**: architecture and credential breaches found by post-execution AST scans of the
   *resulting repository state* of every landed mutation, read independently of the defence verdict.
 
-### Reproduction limits (stated explicitly)
+### Benchmark Scope & Reproduction Limits (Stated Explicitly)
 
-- The suite is a deterministic **in-process simulation** of a repository, not a live clone of a
-  production codebase: it exercises the enforcement logic, not a whole toolchain.
-- Latency figures are single-machine wall-clock timings and are not comparable across hosts; the
-  documentation sync check therefore ignores the latency column of the generated table.
+- **Deterministic Invariant Sink Suite**: The 40-scenario benchmark suite evaluates deterministic invariant sink coverage against scripted evasion mutation families and synthetic repositories. The reported metrics (0/34 adversarial mutations landed, 6/6 clean tasks preserved) validate fail-closed invariant enforcement (I1–I9, D1), not open-ended agent robustness against unbounded multi-turn social engineering.
+- **Live Autonomous Agent Loop**: Unconstrained, multi-step LLM reasoning with live providers (OpenRouter, local models, or MCP tools) is executed separately via `agentpoi-sde run --task "..."`. In live execution, the advisory model's proposals remain untrusted (Tier T2) and are fail-closed gated through the same invariant sink.
+- **In-Process Simulation**: Scenarios run against an in-memory synthetic repository to enable 100% reproducible CPU execution without side effects.
+- **Latency Measurements**: Latency figures represent single-machine wall-clock timings; the documentation sync check therefore ignores the latency column.
 
 ---
 

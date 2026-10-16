@@ -42,9 +42,20 @@ class IsolatedConfigurationSandbox:
             return self._execute_pytest(tmp_path, feature_name, timeout_seconds)
 
     def _write_files(self, base_path: Path, files: Dict[str, str]) -> None:
-        """Writes dictionary of relative path -> content to disk."""
+        """Writes dictionary of relative path -> content to disk with containment check."""
+        resolved_base = base_path.resolve()
         for rel_path, content in files.items():
-            dest = base_path / rel_path
+            norm = rel_path.replace("\\", "/").strip()
+            if norm.startswith("/") or (len(norm) >= 2 and norm[1] == ":"):
+                raise ValueError(f"Security error: absolute path rejected in sandbox: {rel_path}")
+            dest = (base_path / rel_path).resolve()
+            try:
+                if not dest.is_relative_to(resolved_base):
+                    raise ValueError(f"Security error: sandbox path traversal rejected: {rel_path}")
+            except AttributeError:
+                import os
+                if os.path.commonpath([str(resolved_base), str(dest)]) != str(resolved_base):
+                    raise ValueError(f"Security error: sandbox path traversal rejected: {rel_path}")
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(content, encoding="utf-8")
 

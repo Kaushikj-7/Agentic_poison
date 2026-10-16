@@ -13,6 +13,11 @@ from agentpoi_sde.agent.llm_provider import (
     OpenRouterProvider,
     get_default_provider,
 )
+from agentpoi_sde.agent.runner import (
+    AutonomousAgentRunner,
+    StateTransitionRecord,
+    UnforgeableVerificationReport,
+)
 
 __all__ = [
     "AdvisoryAgentProvider",
@@ -26,4 +31,8 @@ __all__ = [
     "AgentRunResult",
     "CodingAgent",
     "build_agent",
+    "AutonomousAgentRunner",
+    "StateTransitionRecord",
+    "UnforgeableVerificationReport",
 ]
+

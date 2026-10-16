@@ -8,6 +8,8 @@ by hand. Mirrors ``agent_poi.facade.FinancialGuard`` for cross-platform consiste
 
 from __future__ import annotations
 
+import os
+import secrets
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -16,6 +18,7 @@ from agentpoi_sde.anchor.policy_registry import injection_marker_hits
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.anchor.working_part_anchor import WorkingPartAnchor
 from agentpoi_sde.capability.capability_scope import CapabilityScope
+from agentpoi_sde.config_loader import load_sde_config
 from agentpoi_sde.delta.mutation_delta import MutationDeltaExtractor, screen_mutation_content
 from agentpoi_sde.domain import (
     ArchitecturePolicy,
@@ -42,7 +45,7 @@ from agentpoi_sde.exceptions import (
     UntrustedProvenanceError,
 )
 from agentpoi_sde.graph.arch_ledger import ArchitecturalLedger
-from agentpoi_sde.graph.merkle_graph import MerkleKnowledgeGraph
+from agentpoi_sde.graph.merkle_graph import EdgeType, MerkleKnowledgeGraph, NodeType
 from agentpoi_sde.harvester.component_harvester import (
     ComponentHarvester,
     HarvestedComponent,
@@ -52,6 +55,7 @@ from agentpoi_sde.sandbox.isolated_sandbox import (
     IsolatedConfigurationSandbox,
     SandboxExecutionResult,
 )
+from agentpoi_sde.sink.atomic_writer import AtomicDiskWriter
 from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
 
 
@@ -118,9 +122,23 @@ class DevGuard:
         invariant_config: Optional[Dict[str, bool]] = None,
         working_anchor: Optional[WorkingPartAnchor] = None,
         raise_on_violation: bool = False,
+        repo_dir: Optional[str] = None,
+        apply_to_disk: bool = False,
+        monitoring_applies_mutations: Optional[bool] = None,
     ) -> None:
         self.policy = GuardPolicy(policy)
         self.raise_on_violation = raise_on_violation
+        self.repo_dir = repo_dir
+        self.apply_to_disk = apply_to_disk
+        if monitoring_applies_mutations is None:
+            self.monitoring_applies_mutations = bool(
+                load_sde_config().get("guard", {}).get("monitoring_applies_mutations", False)
+            )
+        else:
+            self.monitoring_applies_mutations = bool(monitoring_applies_mutations)
+        self.disk_writer = (
+            AtomicDiskWriter(repo_dir) if (repo_dir and os.path.isdir(repo_dir)) else None
+        )
         self._invariant_config = dict(invariant_config) if invariant_config else None
         self.anchor = RepositoryStateAnchor(
             files=dict(files or {}),
@@ -159,11 +177,13 @@ class DevGuard:
         obligations: Sequence[str] = (),
     ) -> IntentContract:
         """Register an authenticated intent contract as a T0 provenance root."""
+        token = secrets.token_hex(16)
         contract = IntentContract(
             intent_id=intent_id,
             goal=goal,
             allowed_paths=tuple(allowed_paths),
             obligations=tuple(obligations),
+            auth_token=token,
         )
         self._intents[intent_id] = contract
         node = self.provenance.add_node(
@@ -223,11 +243,20 @@ class DevGuard:
         return []
 
     def _apply(self, delta: MutationDelta) -> None:
-        """Apply an authorised mutation to the working tree."""
+        """Apply an authorised mutation to the working tree and optionally to disk."""
         if delta.op == MutationOp.DELETE:
             self.workspace.pop(delta.path, None)
         else:
             self.workspace[delta.path] = delta.new_content
+
+        if self.apply_to_disk and self.disk_writer is not None:
+            mutation = CodeMutation(
+                path=delta.path,
+                op=delta.op,
+                new_content=delta.new_content,
+                old_content=delta.old_content,
+            )
+            self.disk_writer.apply_mutation(mutation)
 
     def _build_result(
         self,
@@ -297,17 +326,40 @@ class DevGuard:
         nonce: Optional[str],
         result: VerificationResult,
     ) -> MutationVerdict:
-        """Applies delta, logs architectural decision, and returns approved verdict."""
+        """Applies delta, updates Merkle knowledge graph, logs decision, and returns approved verdict."""
         self._apply(delta)
         self._record(delta, intent_id, nonce, "approved")
+
+        # Update runtime Merkle Knowledge Graph
+        node_id = f"file:{delta.path}"
+        payload = {
+            "path": delta.path,
+            "op": delta.op.value,
+            "patch_hash": delta.patch_hash,
+            "lines_added": delta.added_lines,
+            "lines_removed": delta.removed_lines,
+        }
+        self.merkle_graph.add_node(node_id, NodeType.FILE, payload)
+        if delta.symbol:
+            sym_node_id = f"symbol:{delta.path}#{delta.symbol}"
+            self.merkle_graph.add_node(
+                sym_node_id, NodeType.SYMBOL, {"symbol": delta.symbol, "file": delta.path}
+            )
+            self.merkle_graph.add_edge(sym_node_id, node_id, EdgeType.EXTRACTED_FROM)
+
+        live_graph_root = self.merkle_graph.compute_root_hash()
         self.arch_ledger.record_decision(
             feature=f"Mutation {delta.path} ({delta.op.value})",
             how=f"Applied delta to {delta.path}",
             why=f"Intent: {intent_id}",
             connections=[],
             elements_used=[delta.path],
-            graph_root=self.anchor.tree_oid(),
+            graph_root=live_graph_root,
         )
+
+        if self.capability is not None:
+            self.capability.record_touched_file(delta.path)
+
         return MutationVerdict(
             is_applied=True,
             status="APPROVED",
@@ -384,14 +436,21 @@ class DevGuard:
     def _handle_monitoring(
         self, delta: MutationDelta, intent_id: str, nonce: Optional[str], result: VerificationResult
     ) -> MutationVerdict:
-        """Audits mutation without mutation under MONITORING policy."""
+        """Audits mutation under MONITORING policy, applying only if monitoring_applies_mutations is enabled."""
         self._audit(delta, intent_id, nonce, "monitored", result)
+        action_taken = "monitoring_logged"
+        is_applied = False
+        if self.monitoring_applies_mutations:
+            self._apply(delta)
+            action_taken = "monitoring_applied"
+            is_applied = True
+
         return MutationVerdict(
-            is_applied=False,
+            is_applied=is_applied,
             status="MONITORED",
             intent_id=intent_id,
             mutation_path=delta.path,
-            action_taken="monitoring_logged",
+            action_taken=action_taken,
             violations=[ViolationItem(v.code, v.message) for v in result.violations],
             violation_codes=result.violation_codes,
             delta=delta,
@@ -403,7 +462,8 @@ class DevGuard:
         mutation: CodeMutation,
         intent_id: str,
         nonce: Optional[str] = None,
-        mutation_origin: SourceOrigin = SourceOrigin.VERIFIED_USER,
+        mutation_origin: Optional[SourceOrigin] = None,
+        auth_token: Optional[str] = None,
         parent_node_ids: Optional[List[str]] = None,
     ) -> MutationVerdict:
         """Evaluate a proposed mutation through every gate and, if authorised, apply it."""
@@ -419,8 +479,35 @@ class DevGuard:
                 violation_codes=["I0"],
             )
 
+        # Enforce provenance trust boundary:
+        # A caller cannot self-assert VERIFIED_USER without supplying the authenticated intent auth_token.
+        if mutation_origin == SourceOrigin.VERIFIED_USER:
+            if not auth_token or auth_token != intent.auth_token:
+                return MutationVerdict(
+                    is_applied=False,
+                    status="BLOCKED",
+                    intent_id=intent_id,
+                    mutation_path=mutation.path,
+                    action_taken="blocked_unauthenticated_origin",
+                    violations=[
+                        ViolationItem(
+                            "P1",
+                            "P1: unauthenticated caller cannot self-assert VERIFIED_USER origin; valid intent auth_token required.",
+                        )
+                    ],
+                    violation_codes=["P1"],
+                )
+            effective_origin = SourceOrigin.VERIFIED_USER
+        elif mutation_origin is None:
+            if auth_token and auth_token == intent.auth_token:
+                effective_origin = SourceOrigin.VERIFIED_USER
+            else:
+                effective_origin = SourceOrigin.INTERNAL_TOOL
+        else:
+            effective_origin = mutation_origin
+
         mutation_node, delta = self._create_mutation_node_and_delta(
-            mutation, intent_id, mutation_origin, parent_node_ids
+            mutation, intent_id, effective_origin, parent_node_ids
         )
         if self.policy == GuardPolicy.PERMISSIVE:
             return self._handle_permissive(delta, intent_id, nonce, mutation_node)

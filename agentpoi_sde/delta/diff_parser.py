@@ -271,7 +271,7 @@ def extract_git_mutations(
     base_files: Dict[str, str] = {}
     muts = parse_unified_diff(diff_text, base_files=None) if diff_text.strip() else []
     for m in muts:
-        show_ref = f":{m.path}" if staged else f"HEAD:{m.path}"
+        show_ref = f"HEAD:{m.path}" if staged else f":{m.path}"
         try:
             res = subprocess.run(
                 ["git", "show", show_ref],

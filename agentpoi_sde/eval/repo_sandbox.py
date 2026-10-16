@@ -6,6 +6,7 @@ sandbox is the substrate every scenario is simulated against, so an attack's suc
 read from the resulting repository state alone (state-diff oracle, no defence-shaped oracle).
 """
 
+import hashlib
 from typing import Dict, Iterable, Optional, Set
 
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
@@ -186,8 +187,9 @@ class RepoSandbox:
     def default(cls) -> "RepoSandbox":
         """Return the canonical sandbox used by the benchmark."""
         sandbox = cls()
+        actual_hash = hashlib.sha256(DEFAULT_FILES[LOCKED_ENGINE].encode("utf-8")).hexdigest()
         sandbox.working_anchor.register_working_file(
-            LOCKED_ENGINE, "locked_kernel_sha256", "Verified core kernel component"
+            LOCKED_ENGINE, actual_hash, "Verified core kernel component"
         )
         return sandbox
 

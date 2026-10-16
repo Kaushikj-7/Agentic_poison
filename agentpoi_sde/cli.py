@@ -18,13 +18,14 @@ from typing import List, Optional, Tuple
 __version__ = "0.1.0"
 from pathlib import Path
 
+from agentpoi_sde.agent.runner import AutonomousAgentRunner
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
 from agentpoi_sde.delta.diff_parser import (
     MalformedDiffError,
     extract_git_mutations,
     parse_unified_diff,
 )
-from agentpoi_sde.domain import CodeMutation, GuardPolicy
+from agentpoi_sde.domain import CodeMutation, GuardPolicy, MutationOp
 from agentpoi_sde.eval.benchmark import run_benchmark
 from agentpoi_sde.facade import DevGuard
 from agentpoi_sde.graph.graph_indexer import GraphIndexer
@@ -70,6 +71,62 @@ def _add_core_subparsers(subparsers: argparse._SubParsersAction) -> None:
     p_bench.add_argument("--clean-per-family", type=int, default=2, help="Clean controls per family")
     p_bench.add_argument("--format", choices=["markdown", "json", "both"], default="markdown")
     p_bench.add_argument("-o", "--output", default=None, help="Destination report path")
+
+    _add_run_subparser(subparsers)
+
+
+def _add_run_subparser(subparsers: argparse._SubParsersAction) -> None:
+    """Register 'run' subcommand options for autonomous agent loop."""
+    p_run = subparsers.add_parser(
+        "run",
+        help="Boot autonomous coding agent loop with fail-closed invariant verification",
+    )
+    p_run.add_argument("--task", default=None, help="Goal or task description")
+    p_run.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Interactive step-by-step confirmation mode",
+    )
+    p_run.add_argument(
+        "--max-steps",
+        type=int,
+        default=10,
+        help="Maximum execution steps (default: 10)",
+    )
+    p_run.add_argument(
+        "--budget",
+        type=float,
+        default=None,
+        help="Execution budget limit",
+    )
+    p_run.add_argument(
+        "--model",
+        default=None,
+        help="OpenRouter model ID (default: qwen/qwen-2.5-coder-32b-instruct)",
+    )
+    p_run.add_argument(
+        "--api-key",
+        default=None,
+        help="OpenRouter API key override",
+    )
+    p_run.add_argument(
+        "--repo",
+        default=".",
+        help="Target repository directory path (default: .)",
+    )
+    p_run.add_argument(
+        "--json",
+        action="store_true",
+        help="Output verification report as JSON",
+    )
+    p_run.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        help="Output destination report file path",
+    )
+
+
 
 
 def _add_advanced_subparsers(subparsers: argparse._SubParsersAction) -> None:
@@ -345,7 +402,21 @@ def handle_check_diff(args: argparse.Namespace) -> int:
             print("VERDICT: APPROVED (0 mutations)")
         return 0
 
-    all_approved, all_violations, reports = _evaluate_diff_mutations(args, repo_dir, anchor, mutations)
+    # Reconstruct true pre-mutation baseline repository state R0
+    base_files = dict(anchor.to_files())
+    for m in mutations:
+        if m.op == MutationOp.CREATE:
+            base_files.pop(m.path, None)
+        elif m.op in (MutationOp.MODIFY, MutationOp.DELETE):
+            base_files[m.path] = m.old_content
+
+    baseline_anchor = RepositoryStateAnchor(
+        files=base_files,
+        policy=anchor.policy,
+        dependency_allowlist=anchor.declared_dependencies,
+        design_decisions=anchor.design_decisions,
+    )
+    all_approved, all_violations, reports = _evaluate_diff_mutations(args, repo_dir, baseline_anchor, mutations)
     return _print_check_diff_summary(args, all_approved, all_violations, reports, len(mutations))
 
 
@@ -377,7 +448,76 @@ def handle_benchmark(args: argparse.Namespace) -> int:
     return 0 if report.defended.emar == 0.0 else 1
 
 
+def _validate_run_args(args: argparse.Namespace) -> Tuple[bool, Optional[str]]:
+    """Validate argument prerequisites for the 'run' subcommand."""
+    if not args.task and not args.interactive:
+        return False, "Error: Either --task or --interactive is required."
+    target_repo = Path(args.repo).resolve()
+    if not target_repo.exists() or not target_repo.is_dir():
+        return False, f"Error: Repository directory does not exist: {args.repo}"
+    if args.max_steps < 1:
+        return False, "Error: --max-steps must be at least 1."
+    return True, None
+
+
+def _write_run_report(report_text: str, output_path: Optional[str]) -> bool:
+    """Write verification report to file destination if requested."""
+    if not output_path:
+        return True
+    try:
+        out_file = Path(output_path)
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        out_file.write_text(report_text, encoding="utf-8")
+        return True
+    except Exception as exc:
+        sys.stderr.write(f"Error writing verification report to {output_path}: {exc}\n")
+        return False
+
+
+def handle_run(args: argparse.Namespace) -> int:
+    """Handle the 'run' subcommand booting the autonomous agent loop."""
+    valid, err_msg = _validate_run_args(args)
+    if not valid:
+        sys.stderr.write(f"{err_msg}\n")
+        return 2
+
+    task_goal = args.task
+    if not task_goal and args.interactive:
+        try:
+            sys.stderr.write("Enter task goal: ")
+            sys.stderr.flush()
+            task_goal = input().strip()
+        except (EOFError, KeyboardInterrupt):
+            return 2
+        if not task_goal:
+            sys.stderr.write("Error: Task goal cannot be empty.\n")
+            return 2
+
+    try:
+        runner = AutonomousAgentRunner(
+            repo_path=args.repo,
+            max_steps=args.max_steps,
+            budget=args.budget,
+            interactive=args.interactive,
+            model=args.model,
+            api_key=args.api_key,
+        )
+        report = runner.run(task_goal)
+    except Exception as exc:
+        sys.stderr.write(f"Error executing autonomous runner: {exc}\n")
+        return 2
+
+    output_text = report.to_json(indent=2) if args.json else report.to_markdown()
+    print(output_text)
+
+    if not _write_run_report(output_text, args.output):
+        return 2
+
+    return 1 if report.mutations_blocked > 0 else 0
+
+
 def handle_graph(args: argparse.Namespace) -> int:
+
     """Handle the 'graph' subcommand."""
     target = Path(args.path).resolve()
     if not target.is_dir():
@@ -534,6 +674,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return handle_check_diff(args)
     if args.subcommand == "benchmark":
         return handle_benchmark(args)
+    if args.subcommand == "run":
+        return handle_run(args)
     if args.subcommand == "graph":
         return handle_graph(args)
     if args.subcommand == "cross-stack":

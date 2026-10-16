@@ -85,6 +85,11 @@ class ArchitecturalLedger:
     def blocks(self) -> List[ArchLedgerBlock]:
         return self._blocks
 
+    @property
+    def latest_root(self) -> Optional[str]:
+        """Return the Merkle graph root hash of the most recent block."""
+        return self._blocks[-1].graph_root if self._blocks else None
+
     def record_decision(
         self,
         feature: str,

@@ -1,16 +1,20 @@
 """Pluggable LLM providers for the coding agent.
 
 The provider's only job is to *propose* mutations from natural language. It can never
-authorise them: every proposal is routed through ``DevGuard``'s fail-closed sink. Two
+authorise them: every proposal is routed through ``DevGuard``'s fail-closed sink. Three
 providers ship here:
 
 * ``DeterministicProvider`` - an offline, scripted proposal source. Reproducible and
   used by the simulation and test harness (no network, no keys, no cost).
-* ``OpenRouterProvider`` - a live, OpenAI-compatible provider selected by API key.
+* ``AdvisoryAgentProvider`` - simulated advisory LLM reasoning translating goals and context.
+* ``OpenRouterProvider`` - a live, OpenAI-compatible provider targeting open-weight models
+  (e.g. Qwen 2.5 Coder 32B, LLaMA 3.1 8B) with graceful offline fallback.
 
-A missing key, a network failure, or unparsable output degrades to *no proposals* -
-fail-closed at the agent boundary, never fail-open.
+A missing key, a network failure, or unparsable output cascades to local deterministic
+advisory reasoning - fail-closed at the agent boundary, never fail-open.
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -18,6 +22,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
 
+from agentpoi_sde.agent.armor import (
+    parse_structured_proposal,
+    parse_structured_proposals,
+    wrap_envelopes,
+)
+from agentpoi_sde.config_loader import load_sde_config
 from agentpoi_sde.domain import CodeMutation, MutationOp
 
 _CODE_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
@@ -29,6 +39,9 @@ _SYSTEM_PROMPT = (
     "Never modify CI, policy, or agent-configuration files unless the task explicitly "
     "requires it. Never delete or weaken tests. Output JSON only."
 )
+
+DEFAULT_MODEL = "qwen/qwen-2.5-coder-32b-instruct"
+LLAMA_MODEL = "meta-llama/llama-3.1-8b-instruct"
 
 
 def _parse_mutations(payload: str) -> List[CodeMutation]:
@@ -158,14 +171,27 @@ class OpenRouterProvider:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "openrouter/auto",
+        model: Optional[str] = None,
+        fallback_provider: Optional[Any] = None,
         base_url: str = "https://openrouter.ai/api/v1",
         timeout_seconds: int = 60,
+        referer: str = "https://github.com/agent-poi/agentpoi-sde",
+        title: str = "AgentPOI-SDE",
     ) -> None:
-        self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
-        self.model = model
-        self.base_url = base_url.rstrip("/")
-        self.timeout_seconds = timeout_seconds
+        cfg = load_sde_config().get("runtime", {}).get("openrouter", {})
+        default_base_url = cfg.get("base_url", "https://openrouter.ai/api/v1")
+        default_timeout = int(cfg.get("timeout_seconds", 60))
+        resolved_base_url = base_url if base_url != "https://openrouter.ai/api/v1" else default_base_url
+        resolved_timeout = timeout_seconds if timeout_seconds != 60 else default_timeout
+
+        raw_key = api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY")
+        self.api_key = raw_key if raw_key else None
+        self.model = model or os.environ.get("OPENROUTER_MODEL") or DEFAULT_MODEL
+        self.fallback_provider = fallback_provider
+        self.base_url = resolved_base_url.rstrip("/")
+        self.timeout_seconds = resolved_timeout
+        self.referer = referer
+        self.title = title
 
     @property
     def name(self) -> str:
@@ -174,28 +200,64 @@ class OpenRouterProvider:
 
     def available(self) -> bool:
         """Return True when an API key is configured."""
-        return bool(self.api_key)
+        return bool(self.api_key and self.api_key.strip())
+
+    def _fallback(
+        self, goal: str, context: str, files: Dict[str, str]
+    ) -> List[CodeMutation]:
+        """Graceful offline fallback to deterministic advisory reasoning."""
+        if self.fallback_provider is not None:
+            try:
+                return list(self.fallback_provider.propose_mutations(goal, context, files))
+            except Exception:
+                return []
+        advisory = AdvisoryAgentProvider()
+        return list(advisory.propose_mutations(goal, context, files))
+
+    def _decode_response(self, content: str) -> List[CodeMutation]:
+        """Decode raw model response using strict armor decoder with fallback."""
+        single = parse_structured_proposal(content)
+        if single is not None:
+            return [single.to_code_mutation()]
+
+        multi = parse_structured_proposals(content)
+        if multi:
+            return [p.to_code_mutation() for p in multi]
+
+        # Return empty list fail-closed if decoding fails
+        return []
 
     def propose_mutations(
         self, goal: str, context: str, files: Dict[str, str]
     ) -> List[CodeMutation]:
-        """Request mutations from the live model; return [] on any failure (fail-closed)."""
+        """Request mutations from the live model; cascade to fallback on any failure."""
         if not self.available():
-            return []
+            return self._fallback(goal, context, files)
+
         import requests
 
+        envelope_prompt = wrap_envelopes(
+            intent_id="task",
+            goal=goal,
+            untrusted_contexts=[("context", context)] if context else [],
+        )
         user_prompt = (
-            f"TASK:\n{goal}\n\nCONTEXT:\n{context}\n\n"
+            f"{envelope_prompt}\n\n"
             f"REPOSITORY FILES (truncated):\n{self._summarise(files)}\n"
         )
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": self.referer,
+            "X-Title": self.title,
+        }
+
         try:
             response = requests.post(
                 f"{self.base_url}/chat/completions",
                 timeout=self.timeout_seconds,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 json={
                     "model": self.model,
                     "messages": [
@@ -206,10 +268,14 @@ class OpenRouterProvider:
             )
             response.raise_for_status()
             data: Dict[str, Any] = response.json()
-            content = data["choices"][0]["message"]["content"]
+            content = str(data["choices"][0]["message"]["content"])
         except Exception:
-            return []
-        return _parse_mutations(str(content))
+            return self._fallback(goal, context, files)
+
+        mutations = self._decode_response(content)
+        if not mutations:
+            return self._fallback(goal, context, files)
+        return mutations
 
     @staticmethod
     def _summarise(files: Dict[str, str], per_file_chars: int = 400) -> str:

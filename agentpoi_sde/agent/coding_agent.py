@@ -59,13 +59,15 @@ class CodingAgent:
         allowed_paths: Sequence[str],
         context: str = "",
         context_origin: SourceOrigin = SourceOrigin.UNTRUSTED_WEB,
-        mutation_origin: SourceOrigin = SourceOrigin.VERIFIED_USER,
+        mutation_origin: Optional[SourceOrigin] = None,
+        auth_token: Optional[str] = None,
         nonce_prefix: str = "task",
         provider=None,
         parent_node_ids: Optional[List[str]] = None,
     ) -> AgentRunResult:
         """Execute one task: register intent, ingest context, propose, then gate each mutation."""
         intent = self.guard.register_intent(task_id, goal, allowed_paths)
+        effective_token = auth_token if auth_token is not None else intent.auth_token
         context_node = None
         if context:
             context_node = self.guard.register_context(context, origin=context_origin)
@@ -83,6 +85,7 @@ class CodingAgent:
                 intent.intent_id,
                 nonce=f"{nonce_prefix}-{task_id}-{index}",
                 mutation_origin=mutation_origin,
+                auth_token=effective_token,
                 parent_node_ids=parents,
             )
             result.verdicts.append(verdict)

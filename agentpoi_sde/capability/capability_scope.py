@@ -21,14 +21,24 @@ class CapabilityScope:
         allowed_paths: Iterable[str],
         allowed_ops: Optional[Iterable[MutationOp]] = None,
         egress_allowlist: Optional[Iterable[str]] = None,
-        max_files: int = 1,
+        max_files: Optional[int] = None,
     ) -> None:
         self.scope_id = scope_id
         self.allowed_paths: List[str] = [p.replace("\\", "/") for p in allowed_paths]
         self.allowed_ops: Set[MutationOp] = set(allowed_ops or list(MutationOp))
         self.egress_allowlist: List[str] = list(egress_allowlist or [])
         self.max_files = max_files
+        self._touched_files: Set[str] = set()
         self._consumed_nonces: Set[str] = set()
+
+    def record_touched_file(self, path: str) -> None:
+        """Record a file mutation against the max_files budget."""
+        self._touched_files.add(path.replace("\\", "/"))
+
+    @property
+    def touched_files_count(self) -> int:
+        """Return the count of unique touched files under this capability."""
+        return len(self._touched_files)
 
     def _path_permitted(self, path: str) -> bool:
         """Return True when a path falls inside this grant's patterns."""
@@ -42,6 +52,7 @@ class CapabilityScope:
     def validate(self, delta: MutationDelta) -> List[InvariantViolation]:
         """Return capability-scope violations for a mutation delta."""
         violations: List[InvariantViolation] = []
+        norm = delta.path.replace("\\", "/")
         if not self._path_permitted(delta.path):
             violations.append(
                 InvariantViolation("K1", f"path '{delta.path}' is outside capability grant '{self.scope_id}'.")
@@ -55,6 +66,13 @@ class CapabilityScope:
                 violations.append(
                     InvariantViolation("K3", f"egress endpoint '{url}' is not allow-listed by '{self.scope_id}'.")
                 )
+        if self.max_files is not None and norm not in self._touched_files and len(self._touched_files) >= self.max_files:
+            violations.append(
+                InvariantViolation(
+                    "K4",
+                    f"file budget exceeded for scope '{self.scope_id}': max {self.max_files} unique file(s) allowed (attempted: '{delta.path}').",
+                )
+            )
         return violations
 
     # -- freshness / non-replay ---------------------------------------------------

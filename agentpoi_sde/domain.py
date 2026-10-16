@@ -81,6 +81,7 @@ class IntentContract:
     goal: str
     allowed_paths: Tuple[str, ...]
     obligations: Tuple[str, ...] = ()
+    auth_token: str = ""
 
     def permits(self, path: str) -> bool:
         """Return True when ``path`` falls inside any declared intent scope pattern."""

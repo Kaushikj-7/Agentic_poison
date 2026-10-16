@@ -18,6 +18,11 @@ class WorkingPartRecord:
     description: str
     registered_at: float = field(default_factory=time.time)
 
+    @property
+    def sha256_hash(self) -> str:
+        """Alias for content_hash."""
+        return self.content_hash
+
 
 class WorkingPartAnchor:
     """Protects verified working components from accidental agent mutation or regression."""
@@ -38,6 +43,15 @@ class WorkingPartAnchor:
             content_hash=content_hash,
             description=description,
         )
+
+    @property
+    def registered_files(self) -> Dict[str, WorkingPartRecord]:
+        """Return defensive copy of all registered working parts."""
+        return dict(self._working_files)
+
+    def is_file_registered(self, file_path: str) -> bool:
+        """Alias for is_working_file."""
+        return self.is_working_file(file_path)
 
     def is_working_file(self, file_path: str) -> bool:
         """Checks if a file is registered as a protected working part."""

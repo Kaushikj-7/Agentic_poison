@@ -177,19 +177,26 @@ def check_docs_metrics_sync() -> Tuple[bool, str]:
 
 
 def check_working_tree() -> Tuple[bool, str]:
-    """Verify git working tree has no uncommitted changes to tracked files."""
+    """Verify git working tree has no uncommitted changes (tracked or untracked)."""
     try:
         res = subprocess.run(
-            ["git", "status", "--porcelain", "-uno"],
+            ["git", "status", "--porcelain", "-uall"],
             cwd=workspace_root,
             capture_output=True,
             text=True,
         )
         if res.returncode == 0:
-            modified = [line for line in res.stdout.strip().splitlines() if line.strip()]
-            if not modified:
+            lines = [line for line in res.stdout.strip().splitlines() if line.strip()]
+            if not lines:
                 return True, "CLEAN"
-            return False, f"{len(modified)} uncommitted tracked change(s)"
+            tracked = [line for line in lines if not line.startswith("?? ")]
+            untracked = [line for line in lines if line.startswith("?? ")]
+            details = []
+            if tracked:
+                details.append(f"{len(tracked)} tracked change(s)")
+            if untracked:
+                details.append(f"{len(untracked)} untracked file(s)")
+            return False, ", ".join(details)
         return True, "GIT_UNAVAILABLE"
     except Exception:
         return True, "GIT_BYPASS"
