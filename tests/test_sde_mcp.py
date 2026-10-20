@@ -595,3 +595,258 @@ def test_stdio_transport_stream() -> None:
     assert resp1["result"]["protocolVersion"] == "2024-11-05"
     assert resp2["id"] == 2
     assert len(resp2["result"]["tools"]) == 4
+
+
+# ---------------------------------------------------------------------------
+# Suite 7: Hardened Path Traversal & Strict Schema Invariant Tests
+# ---------------------------------------------------------------------------
+
+def test_url_encoded_path_traversal_rejection() -> None:
+    """Verify URL-encoded and double URL-encoded path traversals are blocked."""
+    guard = _create_test_guard()
+    dispatcher = MCPDispatcher()
+    dispatcher.register_core_tools(guard)
+
+    # %2e%2e traversal in file_path
+    res1 = dispatcher.call_tool(
+        "sde_ast_search",
+        {"file_path": "%2e%2e/%2e%2e/etc/passwd"},
+    )
+    assert res1.isError is True
+    assert "PATH_TRAVERSAL_ERROR" in res1.content[0].text
+
+    # Double-encoded traversal %252e%252e in harvest
+    res2 = dispatcher.call_tool(
+        "sde_harvest_component",
+        {
+            "file_path": "%252e%252e/evil.py",
+            "symbol_name": "steal_keys",
+        },
+    )
+    assert res2.isError is True
+    assert "PATH_TRAVERSAL_ERROR" in res2.content[0].text
+
+
+def test_uri_scheme_rejection() -> None:
+    """Verify URI schemes like file:// and smb:// are blocked fail-closed."""
+    guard = _create_test_guard()
+    dispatcher = MCPDispatcher()
+    dispatcher.register_core_tools(guard)
+
+    res_file = dispatcher.call_tool(
+        "sde_ast_search",
+        {"file_path": "file:///etc/passwd"},
+    )
+    assert res_file.isError is True
+    assert "PATH_TRAVERSAL_ERROR" in res_file.content[0].text
+
+    res_smb = dispatcher.call_tool(
+        "sde_harvest_component",
+        {
+            "file_path": "smb://192.168.1.1/share/evil.py",
+            "symbol_name": "fn",
+        },
+    )
+    assert res_smb.isError is True
+    assert "PATH_TRAVERSAL_ERROR" in res_smb.content[0].text
+
+
+def test_unc_path_rejection() -> None:
+    """Verify Windows UNC paths and device paths are blocked fail-closed."""
+    guard = _create_test_guard()
+    dispatcher = MCPDispatcher()
+    dispatcher.register_core_tools(guard)
+
+    res_unc1 = dispatcher.call_tool(
+        "sde_ast_search",
+        {"file_path": r"\\server\share\file.py"},
+    )
+    assert res_unc1.isError is True
+    assert "PATH_TRAVERSAL_ERROR" in res_unc1.content[0].text
+
+    res_unc2 = dispatcher.call_tool(
+        "sde_ast_search",
+        {"file_path": "//server/share/file.py"},
+    )
+    assert res_unc2.isError is True
+    assert "PATH_TRAVERSAL_ERROR" in res_unc2.content[0].text
+
+    res_dev = dispatcher.call_tool(
+        "sde_ast_search",
+        {"file_path": r"\\?\C:\secret.txt"},
+    )
+    assert res_dev.isError is True
+    assert "PATH_TRAVERSAL_ERROR" in res_dev.content[0].text
+
+
+def test_diff_header_path_traversal_rejection() -> None:
+    """Verify path traversal embedded in unified diff headers is blocked fail-closed."""
+    guard = _create_test_guard()
+    dispatcher = MCPDispatcher()
+    dispatcher.register_core_tools(guard)
+
+    evil_diff = (
+        "--- a/../../etc/passwd\n"
+        "+++ b/../../etc/passwd\n"
+        "@@ -1,1 +1,1 @@\n"
+        "+root::0:0:root:/root:/bin/bash\n"
+    )
+    res = dispatcher.call_tool(
+        "sde_propose_mutation",
+        {
+            "intent_id": "T0_TEST_TASK",
+            "diff": evil_diff,
+        },
+    )
+    assert res.isError is True
+    assert "PATH_TRAVERSAL_ERROR" in res.content[0].text
+
+
+def test_schema_field_validators_reject_traversal() -> None:
+    """Verify Pydantic models directly reject traversal via field validators."""
+    import pydantic
+    import pytest
+
+    from agentpoi_sde.mcp.schemas import (
+        ASTSearchInput,
+        ComponentHarvestInput,
+        MutationProposalInput,
+        TestRunnerInput,
+    )
+
+    # MutationProposalInput path
+    with pytest.raises(pydantic.ValidationError):
+        MutationProposalInput(
+            intent_id="T0",
+            path="../../etc/shadow",
+            op="modify",
+            new_content="# pass",
+        )
+
+    # MutationProposalInput diff traversal
+    with pytest.raises(pydantic.ValidationError):
+        MutationProposalInput(
+            intent_id="T0",
+            diff="--- a/../secret.txt\n+++ b/../secret.txt\n@@ -1 +1 @@\n+x\n",
+        )
+
+    # ComponentHarvestInput
+    with pytest.raises(pydantic.ValidationError):
+        ComponentHarvestInput(
+            file_path="../../../evil.py",
+            symbol_name="steal",
+        )
+
+    # ASTSearchInput
+    with pytest.raises(pydantic.ValidationError):
+        ASTSearchInput(
+            file_path="C:\\Windows\\System32\\cmd.exe",
+        )
+
+    # TestRunnerInput
+    with pytest.raises(pydantic.ValidationError):
+        TestRunnerInput(
+            test_paths=["tests/../../outside.py"],
+        )
+
+
+def test_strict_true_and_extra_forbid_on_schemas_and_protocol() -> None:
+    """Verify strict=True and extra='forbid' on output schemas and JSON-RPC protocol models."""
+    import pydantic
+    import pytest
+
+    from agentpoi_sde.mcp.protocol import (
+        CallToolResult,
+        InitializeResult,
+        JSONRPCError,
+        JSONRPCRequest,
+        JSONRPCResponse,
+        ToolContent,
+        ToolDefinition,
+    )
+    from agentpoi_sde.mcp.schemas import (
+        ASTSearchOutput,
+        ComponentHarvestOutput,
+        MutationProposalOutput,
+        MutationVerdictItem,
+        SymbolMatch,
+        TestFailureItem,
+        TestRunnerOutput,
+    )
+
+    # Output schemas reject extra fields
+    with pytest.raises(pydantic.ValidationError):
+        ASTSearchOutput(matches=[], total_matches=0, extra_field="forbidden")
+
+    with pytest.raises(pydantic.ValidationError):
+        SymbolMatch(name="fn", kind="function", file_path="a.py", module="a", extra_field=1)
+
+    with pytest.raises(pydantic.ValidationError):
+        ComponentHarvestOutput(
+            symbol_name="fn",
+            file_path="a.py",
+            sliced_code="def fn(): pass",
+            content_hash="abc",
+            is_approved=True,
+            extra_field=True,
+        )
+
+    with pytest.raises(pydantic.ValidationError):
+        MutationVerdictItem(
+            path="a.py",
+            op="create",
+            is_applied=True,
+            status="APPROVED",
+            extra_field=True,
+        )
+
+    with pytest.raises(pydantic.ValidationError):
+        MutationProposalOutput(
+            overall_approved=True,
+            extra_field=True,
+        )
+
+    with pytest.raises(pydantic.ValidationError):
+        TestFailureItem(
+            test_id="t1",
+            message="fail",
+            traceback="tb",
+            extra_field=True,
+        )
+
+    with pytest.raises(pydantic.ValidationError):
+        TestRunnerOutput(
+            success=True,
+            exit_code=0,
+            extra_field=True,
+        )
+
+    # Output schemas reject type coercion under strict=True (e.g. string for int/bool)
+    with pytest.raises(pydantic.ValidationError):
+        ASTSearchOutput(matches=[], total_matches="10")  # str instead of int
+
+    with pytest.raises(pydantic.ValidationError):
+        TestRunnerOutput(success="true", exit_code=0)  # str instead of bool
+
+    # Protocol models reject extra fields and strict type mismatches
+    with pytest.raises(pydantic.ValidationError):
+        ToolContent(type="text", text="hello", unknown=123)
+
+    with pytest.raises(pydantic.ValidationError):
+        CallToolResult(isError="false")  # str instead of bool
+
+    with pytest.raises(pydantic.ValidationError):
+        ToolDefinition(name="tool", description="desc", inputSchema={}, unknown="bad")
+
+    with pytest.raises(pydantic.ValidationError):
+        InitializeResult(protocolVersion=12345)  # int instead of str
+
+    with pytest.raises(pydantic.ValidationError):
+        JSONRPCError(code="INVALID", message="bad code")  # str instead of int
+
+    with pytest.raises(pydantic.ValidationError):
+        JSONRPCRequest(method=123)  # int instead of str
+
+    with pytest.raises(pydantic.ValidationError):
+        JSONRPCResponse(jsonrpc=2.0)  # float instead of str
+

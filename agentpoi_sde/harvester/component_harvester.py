@@ -12,6 +12,7 @@ from agentpoi_sde.harvester.slicer_security import (
     SlicerSecurityResult,
     SlicerSecurityValidator,
 )
+from agentpoi_sde.sandbox.isolated_sandbox import IsolatedConfigurationSandbox
 
 
 @dataclass(frozen=True)
@@ -77,10 +78,12 @@ class ComponentHarvester:
         registry: Optional[LocalComponentRegistry] = None,
         slicer: Optional[ProgramSlicer] = None,
         security_validator: Optional[SlicerSecurityValidator] = None,
+        sandbox: Optional[IsolatedConfigurationSandbox] = None,
     ) -> None:
         self.registry = registry or LocalComponentRegistry()
         self.slicer = slicer or ProgramSlicer()
         self.security_validator = security_validator or SlicerSecurityValidator()
+        self.sandbox = sandbox
 
     def harvest(
         self,
@@ -117,6 +120,25 @@ class ComponentHarvester:
                 pruned_symbols=slice_result.pruned_symbols,
                 error=f"Security check failed: {'; '.join(security_verdict.violations)}",
             )
+
+        if self.sandbox is not None:
+            sandbox_ok, sandbox_msg = self.sandbox.verify_slice_in_sandbox(
+                slice_result.sliced_code, target_symbol
+            )
+            if not sandbox_ok:
+                return HarvestedComponent(
+                    name=f"{repo_name}:{target_symbol}",
+                    repo_name=repo_name,
+                    file_path=file_path,
+                    target_symbol=target_symbol,
+                    sliced_code=slice_result.sliced_code,
+                    content_hash=self._hash(slice_result.sliced_code),
+                    security_verdict=security_verdict,
+                    is_approved=False,
+                    retained_symbols=slice_result.retained_symbols,
+                    pruned_symbols=slice_result.pruned_symbols,
+                    error=f"Sandbox verification failed: {sandbox_msg}",
+                )
 
         return HarvestedComponent(
             name=f"{repo_name}:{target_symbol}",

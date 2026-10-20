@@ -36,16 +36,95 @@ class ProgramSlicer:
             )
 
         top_defs, import_nodes, all_syms = self._index_top_level(tree)
-        if target_symbol not in top_defs:
-            return SliceResult(
-                target_symbol=target_symbol,
-                sliced_code="",
-                is_valid=False,
-                error=f"Target symbol '{target_symbol}' not found in source.",
-            )
 
-        needed_syms, needed_imports = self._compute_dependencies(target_symbol, top_defs, import_nodes)
-        retained_nodes = self._build_retained_nodes(tree, needed_syms, needed_imports)
+        is_method_slice = "." in target_symbol
+        pruned_class_symbols: List[str] = []
+        replaced_defs: Dict[str, ast.AST] = {}
+        root_symbol = target_symbol
+
+        if is_method_slice:
+            class_name, method_name = target_symbol.split(".", 1)
+            if class_name not in top_defs:
+                return SliceResult(
+                    target_symbol=target_symbol,
+                    sliced_code="",
+                    is_valid=False,
+                    error=f"Target symbol '{target_symbol}' not found in source.",
+                )
+            class_node = top_defs[class_name]
+            if not isinstance(class_node, ast.ClassDef):
+                return SliceResult(
+                    target_symbol=target_symbol,
+                    sliced_code="",
+                    is_valid=False,
+                    error=f"Target symbol parent '{class_name}' is not a class.",
+                )
+
+            class_methods: Dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+            for item in class_node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    class_methods[item.name] = item
+
+            if method_name not in class_methods:
+                return SliceResult(
+                    target_symbol=target_symbol,
+                    sliced_code="",
+                    is_valid=False,
+                    error=f"Method '{method_name}' not found in class '{class_name}'.",
+                )
+
+            methods_queue = [method_name]
+            if "__init__" in class_methods and "__init__" not in methods_queue:
+                methods_queue.append("__init__")
+            if "__new__" in class_methods and "__new__" not in methods_queue:
+                methods_queue.append("__new__")
+
+            retained_class_methods: Set[str] = set(methods_queue)
+            while methods_queue:
+                curr_m = methods_queue.pop(0)
+                m_node = class_methods[curr_m]
+                m_refs = self._extract_referenced_names(m_node)
+                for r in m_refs:
+                    if r in class_methods and r not in retained_class_methods:
+                        retained_class_methods.add(r)
+                        methods_queue.append(r)
+
+            for m_name in class_methods:
+                if m_name not in retained_class_methods:
+                    pruned_class_symbols.append(m_name)
+
+            new_class_body: List[ast.AST] = []
+            for item in class_node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if item.name in retained_class_methods:
+                        new_class_body.append(item)
+                else:
+                    new_class_body.append(item)
+
+            type_params = getattr(class_node, "type_params", [])
+            retained_class_node = ast.ClassDef(
+                name=class_node.name,
+                bases=class_node.bases,
+                keywords=class_node.keywords,
+                body=new_class_body,
+                decorator_list=class_node.decorator_list,
+                type_params=type_params,
+            )
+            ast.copy_location(retained_class_node, class_node)
+            replaced_defs[class_name] = retained_class_node
+            top_defs[class_name] = retained_class_node
+            root_symbol = class_name
+        else:
+            if target_symbol not in top_defs:
+                return SliceResult(
+                    target_symbol=target_symbol,
+                    sliced_code="",
+                    is_valid=False,
+                    error=f"Target symbol '{target_symbol}' not found in source.",
+                )
+
+        needed_syms, needed_imports = self._compute_dependencies(root_symbol, top_defs, import_nodes)
+        retained_nodes = self._build_retained_nodes(tree, needed_syms, needed_imports, replaced_defs)
 
         new_module = ast.Module(body=retained_nodes, type_ignores=[])
         ast.fix_missing_locations(new_module)
@@ -62,12 +141,17 @@ class ProgramSlicer:
             )
 
         pruned_syms = [s for s in all_syms if s not in needed_syms]
+        pruned_syms.extend(pruned_class_symbols)
+        retained_sym_list = set(needed_syms)
+        if is_method_slice:
+            retained_sym_list.add(target_symbol)
+
         return SliceResult(
             target_symbol=target_symbol,
             sliced_code=sliced_code,
-            retained_symbols=sorted(needed_syms),
-            pruned_symbols=sorted(pruned_syms),
-            dependencies=sorted(s for s in needed_syms if s != target_symbol),
+            retained_symbols=sorted(retained_sym_list),
+            pruned_symbols=sorted(set(pruned_syms)),
+            dependencies=sorted(s for s in needed_syms if s != root_symbol),
             is_valid=True,
         )
 
@@ -130,6 +214,7 @@ class ProgramSlicer:
                     queue.append(name)
                 elif name in import_map:
                     needed_imports.add(import_map[name])
+                    needed_syms.add(name)
 
         return needed_syms, needed_imports
 
@@ -176,9 +261,43 @@ class ProgramSlicer:
         tree: ast.Module,
         needed_syms: Set[str],
         needed_imports: Set[ast.AST],
+        replaced_defs: Optional[Dict[str, ast.AST]] = None,
     ) -> List[ast.AST]:
         """Filters module body retaining only needed imports and definitions."""
-        return [
-            node for node in tree.body
-            if self._should_retain_node(node, needed_syms, needed_imports)
-        ]
+        retained: List[ast.AST] = []
+        replaced_defs = replaced_defs or {}
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom):
+                if node in needed_imports:
+                    if node.module == "__future__":
+                        retained.append(node)
+                    else:
+                        filtered_aliases = [
+                            alias
+                            for alias in node.names
+                            if (alias.asname or alias.name) in needed_syms
+                        ]
+                        if filtered_aliases:
+                            new_imp = ast.ImportFrom(
+                                module=node.module,
+                                names=filtered_aliases,
+                                level=node.level,
+                            )
+                            ast.copy_location(new_imp, node)
+                            retained.append(new_imp)
+            elif isinstance(node, ast.Import):
+                if node in needed_imports:
+                    filtered_aliases = [
+                        alias
+                        for alias in node.names
+                        if (alias.asname or alias.name.split(".")[0]) in needed_syms
+                    ]
+                    if filtered_aliases:
+                        new_imp = ast.Import(names=filtered_aliases)
+                        ast.copy_location(new_imp, node)
+                        retained.append(new_imp)
+            elif isinstance(node, ast.ClassDef) and node.name in replaced_defs:
+                retained.append(replaced_defs[node.name])
+            elif self._should_retain_node(node, needed_syms, needed_imports):
+                retained.append(node)
+        return retained

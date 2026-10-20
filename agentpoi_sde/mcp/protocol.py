@@ -28,7 +28,7 @@ DEFAULT_PROTOCOL_VERSION = "2024-11-05"
 class ToolContent(BaseModel):
     """A single content item returned in a CallToolResult."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     type: str = Field(default="text", description="Content type (typically 'text')")
     text: str = Field(..., description="Text payload of the tool output")
@@ -37,7 +37,7 @@ class ToolContent(BaseModel):
 class CallToolResult(BaseModel):
     """Result returned from an MCP tools/call request."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     content: List[ToolContent] = Field(
         default_factory=list,
@@ -74,7 +74,7 @@ class CallToolResult(BaseModel):
 class ToolDefinition(BaseModel):
     """Metadata describing a callable tool under the MCP specification."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     name: str = Field(..., description="Unique tool identifier")
     description: str = Field(..., description="Human-readable description of tool capabilities")
@@ -87,7 +87,7 @@ class ToolDefinition(BaseModel):
 class InitializeResult(BaseModel):
     """Result of the MCP initialize handshake."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     protocolVersion: str = Field(
         default=DEFAULT_PROTOCOL_VERSION,
@@ -109,7 +109,7 @@ class InitializeResult(BaseModel):
 class JSONRPCError(BaseModel):
     """JSON-RPC 2.0 error object."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     code: int = Field(..., description="Numeric error code")
     message: str = Field(..., description="Short error message")
@@ -119,7 +119,7 @@ class JSONRPCError(BaseModel):
 class JSONRPCRequest(BaseModel):
     """JSON-RPC 2.0 request or notification envelope."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     jsonrpc: str = Field(default="2.0", description="JSON-RPC version string")
     id: Optional[Union[str, int]] = Field(
@@ -136,7 +136,7 @@ class JSONRPCRequest(BaseModel):
 class JSONRPCResponse(BaseModel):
     """JSON-RPC 2.0 response envelope."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     jsonrpc: str = Field(default="2.0", description="JSON-RPC version string")
     id: Optional[Union[str, int]] = Field(

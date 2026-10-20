@@ -56,10 +56,20 @@ DEFAULT_SDE_CONFIG: Dict[str, Any] = {
     ],
     "test_markers": ["tests/", "test_", "_test.py", "spec/"],
     "runtime": {
-        "llm_provider": "deterministic",
+        "llm_provider": "auto",
         "openrouter": {
             "base_url": "https://openrouter.ai/api/v1",
-            "model": "openrouter/auto",
+            "model": "qwen/qwen-2.5-coder-32b-instruct",
+            "timeout_seconds": 60,
+        },
+        "deepseek": {
+            "base_url": "https://api.deepseek.com/v1",
+            "model": "deepseek-coder",
+            "timeout_seconds": 60,
+        },
+        "vllm": {
+            "base_url": "http://localhost:8000/v1",
+            "model": "qwen/qwen-2.5-coder-32b-instruct",
             "timeout_seconds": 60,
         },
     },
@@ -142,3 +152,9 @@ def get_test_markers() -> list:
 def get_egress_allowlist() -> list:
     """Return the allow-listed egress prefixes."""
     return list(load_sde_config().get("egress_allowlist", []))
+
+
+def get_runtime_config() -> Dict[str, Any]:
+    """Return a defensive copy of the SDE runtime provider configuration."""
+    runtime = load_sde_config().get("runtime", {})
+    return copy.deepcopy(runtime) if isinstance(runtime, dict) else {}

@@ -8,7 +8,9 @@ or malformed calls BEFORE any underlying tool or handler executes.
 from __future__ import annotations
 
 import json
+import posixpath
 import re
+import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
@@ -18,52 +20,150 @@ from pydantic import BaseModel
 from agentpoi_sde.mcp.protocol import CallToolResult, ToolContent, ToolDefinition
 
 DRIVE_OR_ABSOLUTE_PATTERN = re.compile(r"^([a-zA-Z]:|[/\\])")
+URI_SCHEME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9+\-.]*://")
+UNC_PATH_PATTERN = re.compile(r"^([/\\]{2}|[/\\]\?[/\\]|[/\\]\.[/\\])")
 
 
 def check_path_string(path_str: str) -> Optional[str]:
     """Validate a path string fail-closed.
 
-    Rejects null bytes, path traversal ('..'), and absolute paths / drive roots.
+    Unquotes URL encoding, rejects null bytes, URI schemes (file://, smb://),
+    UNC/device paths (\\\\, //), drive roots, absolute paths, and path traversal (..).
     Returns an error message if invalid, or None if acceptable.
     """
     if not isinstance(path_str, str):
         return None
+
+    # Null byte check on raw input
     if "\x00" in path_str:
         return f"Path contains null bytes: {path_str!r}"
-    if DRIVE_OR_ABSOLUTE_PATTERN.match(path_str):
+
+    # Decode percent-encoding (iteratively up to 3 times to prevent nested encoding bypass)
+    decoded = path_str
+    for _ in range(3):
+        next_decoded = urllib.parse.unquote(decoded)
+        if next_decoded == decoded:
+            break
+        decoded = next_decoded
+
+    if "\x00" in decoded:
+        return f"Path contains null bytes after decoding: {path_str!r}"
+
+    # Reject URI schemes (e.g. file:///, smb://, http://)
+    if URI_SCHEME_PATTERN.match(decoded):
+        return f"URI schemes not permitted; path must be repository-relative: {path_str!r}"
+
+    # Reject UNC paths and Windows device namespaces (\\\\server, //server, \\\\?\\, //?/)
+    if decoded.startswith(("\\\\", "//")) or UNC_PATH_PATTERN.match(decoded):
+        return f"Absolute path or drive root not permitted; must be repository-relative: {path_str!r}"
+
+    # Reject drive roots (C:) or absolute roots (/ or \)
+    if DRIVE_OR_ABSOLUTE_PATTERN.match(decoded):
         return f"Absolute path or drive root not permitted; must be repository-relative: {path_str!r}"
 
     # Normalize backslashes for segment checking
-    normalized = path_str.replace("\\", "/")
+    normalized = decoded.replace("\\", "/")
+
+    # Reject UNC paths after normalization if double slash
+    if normalized.startswith("//"):
+        return f"Absolute path or drive root not permitted; must be repository-relative: {path_str!r}"
+
     segments = normalized.split("/")
     if any(seg == ".." for seg in segments):
         return f"Path traversal ('..') detected in path: {path_str!r}"
+
+    # Check normalized relative path containment
+    clean_norm = posixpath.normpath(normalized)
+    if clean_norm == ".." or clean_norm.startswith("../"):
+        return f"Path traversal detected escaping repository root: {path_str!r}"
+
     return None
 
 
-def _check_path_list(items: List[Any]) -> Optional[str]:
-    """Helper to check a list of items for path containment issues."""
-    for item in items:
-        if isinstance(item, str):
-            err = check_path_string(item)
-            if err:
-                return err
-    return None
+def extract_diff_paths(diff_text: str) -> List[str]:
+    """Extract candidate target file paths from unified diff headers.
 
+    Extracts paths from '--- ' and '+++ ' header lines, stripping traditional
+    'a/' and 'b/' prefix indicators while filtering out '/dev/null'.
+    """
+    if not isinstance(diff_text, str) or not diff_text.strip():
+        return []
 
-def sanitize_path_arguments(args: Dict[str, Any]) -> Optional[str]:
-    """Inspect arguments for path parameters and validate containment."""
-    for key, value in args.items():
-        if "path" not in key.lower() and "file" not in key.lower():
+    extracted: List[str] = []
+    for line in diff_text.splitlines():
+        line = line.strip()
+        if not (line.startswith("--- ") or line.startswith("+++ ")):
             continue
-        if isinstance(value, str):
-            err = check_path_string(value)
-            if err:
-                return err
-        elif isinstance(value, list):
-            err = _check_path_list(value)
-            if err:
-                return err
+
+        parts = line.split(None, 2)
+        if len(parts) < 2:
+            continue
+
+        raw = parts[1].strip()
+        # Strip git diff prefixes a/ and b/
+        if raw.startswith("a/") or raw.startswith("b/") or raw.startswith("a\\") or raw.startswith("b\\"):
+            candidate = raw[2:]
+        else:
+            candidate = raw
+
+        # Ignore standard /dev/null used for additions and deletions
+        normalized_candidate = candidate.replace("\\", "/").strip()
+        if normalized_candidate in {"dev/null", "/dev/null"}:
+            continue
+
+        extracted.append(candidate)
+
+    return extracted
+
+
+def sanitize_path_arguments(args: Any) -> Optional[str]:
+    """Inspect arguments recursively for path containment issues and diff header traversals."""
+    if isinstance(args, dict):
+        for key, value in args.items():
+            key_str = str(key).lower()
+            # If the field is a unified diff, extract paths from headers and check each
+            if "diff" in key_str and isinstance(value, str):
+                diff_paths = extract_diff_paths(value)
+                for dp in diff_paths:
+                    err = check_path_string(dp)
+                    if err:
+                        return f"Path traversal in diff header: {err}"
+
+            # If the field name indicates a path or file
+            if "path" in key_str or "file" in key_str:
+                if isinstance(value, str):
+                    err = check_path_string(value)
+                    if err:
+                        return err
+                elif isinstance(value, (list, tuple, set)):
+                    for item in value:
+                        if isinstance(item, str):
+                            err = check_path_string(item)
+                        else:
+                            err = sanitize_path_arguments(item)
+                        if err:
+                            return err
+                elif isinstance(value, dict):
+                    err = sanitize_path_arguments(value)
+                    if err:
+                        return err
+            else:
+                # Recursively check other nested structures
+                err = sanitize_path_arguments(value)
+                if err:
+                    return err
+
+    elif isinstance(args, (list, tuple, set)):
+        for item in args:
+            if isinstance(item, str):
+                err = check_path_string(item)
+                if err:
+                    return err
+            else:
+                err = sanitize_path_arguments(item)
+                if err:
+                    return err
+
     return None
 
 

@@ -39,17 +39,19 @@ def _build_mock_response(content: str, status_code: int = 200) -> MagicMock:
     return mock_resp
 
 
-def test_openrouter_initialization_defaults():
+def test_openrouter_initialization_defaults(monkeypatch):
     """Verify default model, endpoint, timeout, and identity attributes."""
-    provider = OpenRouterProvider(api_key=MOCK_KEY)
-    assert provider.model == DEFAULT_MODEL
-    assert "qwen" in provider.model
-    assert provider.base_url == "https://openrouter.ai/api/v1"
-    assert provider.timeout_seconds == 60
-    assert provider.referer == "https://github.com/agent-poi/agentpoi-sde"
-    assert provider.title == "AgentPOI-SDE"
-    assert provider.name == f"openrouter:{DEFAULT_MODEL}"
-    assert provider.available() is True
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    with patch("agentpoi_sde.agent.llm_provider.get_runtime_config", return_value={}):
+        provider = OpenRouterProvider(api_key=MOCK_KEY)
+        assert provider.model == DEFAULT_MODEL
+        assert "qwen" in provider.model
+        assert provider.base_url == "https://openrouter.ai/api/v1"
+        assert provider.timeout_seconds == 60
+        assert provider.referer == "https://github.com/agent-poi/agentpoi-sde"
+        assert provider.title == "AgentPOI-SDE"
+        assert provider.name == f"openrouter:{DEFAULT_MODEL}"
+        assert provider.available() is True
 
 
 def test_openrouter_headers_and_payload_formatting():

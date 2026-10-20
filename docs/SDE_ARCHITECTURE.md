@@ -148,11 +148,17 @@ the evidence half is an explicit API call, so this document does not claim it is
 | Agent | `agent/llm_provider.py` | Pluggable provider (OpenRouter-style) + deterministic provider |
 | Agent | `agent/coding_agent.py` | Agent loop: plan → propose → guard → sink |
 | Agent | `agent/design_planner.py` | System-design plane: module graph + ADR synthesis |
+| Agent | `agent/jev.py` | Joint Epistemic Verifier: < 0.05ms speculative CPU AST, diff & secret validation |
+| Agent | `agent/transport_security.py` | Transport security: HTTPS enforcement & prompt credential redaction |
+| Agent | `agent/runner.py` | Multi-step autonomous agent runner with touch journaling & atomic rollback |
+| MCP | `mcp/gateway.py` | Fail-closed MCP tool gateway with URL/UNC/diff traversal defenses |
+| MCP | `mcp/schemas.py` | Strict Pydantic v2 schemas (`extra="forbid"`, `strict=True`) |
+| Graph | `graph/context_router.py` | Cryptographic context router emitting verified Merkle inclusion proofs |
 | Eval | `eval/repo_sandbox.py` | Deterministic in-memory repository simulation |
 | Eval | `eval/attack_generator.py` | Generated 13-family adaptive injection suite (no hardcoding) |
 | Eval | `eval/scenario_dataset.py` | Paired clean/adversarial scenario construction |
 | Eval | `eval/benchmark.py` | Dynamic metrics: EMAR, LTSR, CDR, AVR, SLR |
-| CLI | `cli.py` & `__main__.py` | Public CLI tool `agentpoi-sde` (anchor, check-diff, benchmark) |
+| CLI | `cli.py` & `__main__.py` | Public CLI tool `agentpoi-sde` (run, anchor, check-diff, graph, harvest, benchmark) |
 | SDK | `facade.py` | `DevGuard`, `GuardPolicy`, `MutationVerdict` |
 | SDK | `__init__.py` | Public exports |
 
@@ -173,6 +179,12 @@ the evidence half is an explicit API call, so this document does not claim it is
 | **P8** | Working-part anchor + isolated configuration sandbox (invariant I9) | Protected files refused without an explicit capability grant — **DELIVERED** |
 | **P9** | Safe component harvester + program slicer | Minimal dependency slice, security-sanitised, anchored into the ledger — **DELIVERED** |
 | **P10** | Facade/CLI integration, E2E acceptance, documentation sync | `agentpoi-sde` CLI end to end; docs regenerated from live metrics — **DELIVERED** |
+| **P11** | Rigid Pydantic v2 MCP Gateway & Path Traversal Shield | Percent-encoding, URI schemes, Windows UNC & diff patch traversal blocked fail-closed — **DELIVERED** |
+| **P12** | Multi-Vendor Provider Hub & Joint Epistemic Verification (JEV) | Fast speculative CPU pre-screening (median 0.027ms) across OpenRouter, DeepSeek, vLLM — **DELIVERED** |
+| **P13** | Slicer Security Fortress & Ephemeral Sandboxing | AST analysis tracking walrus operators, statement loops & comprehension aliases; socket disabled — **DELIVERED** |
+| **P14** | Cryptographic Context Router & Merkle Inclusions | Bounded neighborhood context routing with cryptographic SHA-256 Merkle inclusion proofs — **DELIVERED** |
+| **P15** | Autonomous Agent Runner with Atomic Rollback | Multi-step agent loop with touch journaling and atomic rollback reverting disk/$R_0$/$M_0$ — **DELIVERED** |
+| **P16** | Controlled Egress & Transport Security | Strict HTTPS validation, loopback HTTP only, and automated credential pattern redaction — **DELIVERED** |
 
 ### Explicitly out of scope for this branch
 - Any multi-language code-gen beyond the Python AST layer (extensible by design, not built now).

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,127 @@ class IsolatedConfigurationSandbox:
 
     def __init__(self, base_dir: Optional[Path] = None) -> None:
         self.base_dir = base_dir
+
+    def verify_slice_in_sandbox(
+        self,
+        sliced_code: str,
+        target_symbol: str,
+        timeout_seconds: int = 15,
+    ) -> Tuple[bool, str]:
+        """Verifies that sliced code imports cleanly and defines target_symbol in a network-isolated environment."""
+        with tempfile.TemporaryDirectory(dir=self.base_dir) as tmp_dir_str:
+            tmp_path = Path(tmp_dir_str)
+            comp_path = tmp_path / "component.py"
+            test_path = tmp_path / "test_component.py"
+
+            comp_path.write_text(sliced_code, encoding="utf-8")
+
+            test_script = f"""import sys
+import socket
+import _socket
+
+# Install runtime network socket blocker
+def _blocked_socket(*args, **kwargs):
+    raise PermissionError("Network access disabled in isolated sandbox")
+
+for mod in (socket, _socket):
+    for attr in [
+        "socket",
+        "SocketType",
+        "create_connection",
+        "create_server",
+        "socketpair",
+        "fromfd",
+        "fromshare",
+        "getaddrinfo",
+        "gethostbyname",
+        "gethostbyname_ex",
+        "gethostbyaddr",
+        "gethostname",
+        "getnameinfo",
+        "getprotobyname",
+        "getservbyname",
+        "getservbyport",
+    ]:
+        if hasattr(mod, attr):
+            try:
+                setattr(mod, attr, _blocked_socket)
+            except Exception:
+                pass
+
+try:
+    socket.SocketType.connect = _blocked_socket
+    socket.SocketType.bind = _blocked_socket
+    socket.SocketType.listen = _blocked_socket
+    socket.SocketType.send = _blocked_socket
+    socket.SocketType.recv = _blocked_socket
+except Exception:
+    pass
+
+try:
+    import component
+except Exception as exc:
+    print(f"IMPORT_ERROR: {{type(exc).__name__}}: {{exc}}", file=sys.stderr)
+    sys.exit(1)
+
+target = "{target_symbol}"
+if "." in target:
+    parts = target.split(".")
+    obj = component
+    for part in parts:
+        if not hasattr(obj, part):
+            print(f"SYMBOL_ERROR: Symbol '{{part}}' not found in '{{obj}}'", file=sys.stderr)
+            sys.exit(2)
+        obj = getattr(obj, part)
+else:
+    if not hasattr(component, target):
+        print(f"SYMBOL_ERROR: Symbol '{{target}}' not found in component", file=sys.stderr)
+        sys.exit(2)
+    obj = getattr(component, target)
+
+import inspect
+if callable(obj) and not inspect.isclass(obj):
+    try:
+        sig = inspect.signature(obj)
+        req_params = [
+            p for p in sig.parameters.values()
+            if p.default == inspect.Parameter.empty
+            and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        ]
+        if len(req_params) == 0:
+            obj()
+    except Exception as exc:
+        print(f"CALL_ERROR: {{type(exc).__name__}}: {{exc}}", file=sys.stderr)
+        sys.exit(3)
+
+print("VERIFICATION_SUCCESS")
+sys.exit(0)
+"""
+            test_path.write_text(test_script, encoding="utf-8")
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(tmp_path)
+
+            cmd = [sys.executable, str(test_path)]
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(tmp_path),
+                    env=env,
+                    timeout=timeout_seconds,
+                )
+            except subprocess.TimeoutExpired:
+                return False, f"Sandbox verification timed out after {timeout_seconds} seconds"
+            except Exception as exc:
+                return False, f"Subprocess execution error: {exc}"
+
+            if proc.returncode == 0 and "VERIFICATION_SUCCESS" in proc.stdout:
+                return True, "OK"
+
+            err_msg = proc.stderr.strip() or proc.stdout.strip()
+            return False, err_msg or f"Verification script exited with code {proc.returncode}"
 
     def run_test_in_isolation(
         self,

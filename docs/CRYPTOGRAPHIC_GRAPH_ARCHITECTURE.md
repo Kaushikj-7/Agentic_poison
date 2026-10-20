@@ -121,7 +121,28 @@ All extraneous declarations, demo drivers, unit test harnesses, and credential v
   fails the build if a published metric drifts from live execution (`scripts/render_sde_metrics.py --check`).
 - Documentation updates and Project Ledger recording.
 
+### Phase P11: Rigid Pydantic v2 Gateway & Path Traversal Shields
+- `agentpoi_sde/mcp/gateway.py`: Fail-closed path traversal validation blocking URL percent-encoding (`%2e%2e`), URI schemes (`file:///`), UNC namespaces (`\\\\server`), Windows drive roots, and unified diff header injections.
+- `agentpoi_sde/mcp/schemas.py`, `protocol.py`: Rigid Pydantic v2 schemas (`extra="forbid"`, `strict=True`) with path validator hooks.
+
+### Phase P12: Multi-Vendor Hub & Joint Epistemic Verification (JEV)
+- `agentpoi_sde/agent/jev.py`: Epistemic pre-screener running on local CPU in median 0.027ms (< 5ms budget), evaluating AST syntax, diff structure, and credential patterns.
+- `agentpoi_sde/agent/llm_provider.py`: Unified routing across OpenRouter (Qwen 2.5 Coder 32B, LLaMA 3.3 70B), DeepSeek API, and local vLLM loopback with deterministic offline fallback.
+
+### Phase P13: Slicer Security Fortress & Socket-Disabled Sandboxing
+- `agentpoi_sde/harvester/slicer_security.py`: Static AST visitor tracking multi-hop module aliasing, walrus assignments (`:=`), statement loops, and comprehension loop targets (`visit_comprehension`), blocking builtins, syscalls, and low-level sockets (`_socket`).
+- `agentpoi_sde/sandbox/isolated_sandbox.py`: Socket/DNS-disabled ephemeral sandboxes with explicit `PermissionError` enforcement.
+
+### Phase P14: Cryptographic Context Router & Merkle Inclusions
+- `agentpoi_sde/graph/context_router.py`: Bounded neighborhood context routing producing `RoutedContextBundle` packages with cryptographic SHA-256 Merkle inclusion proofs.
+- Proxy packages `agentpoi_sde/knowledge`, `agentpoi_sde/ledger`, and `agentpoi_sde/harvest` for clean architecture modularity.
+
+### Phase P15: Autonomous Agent Runner with Atomic Rollback
+- `agentpoi_sde/agent/runner.py`: Multi-step `AutonomousAgentRunner` with touch journaling and atomic `rollback()` reverting repository disk files, anchor state $\mathcal{R}_0$, and Merkle root $M_0$ upon invariant violations or aborts.
+
+### Phase P16: Transport Security & Credential Redaction Pipeline
+- `agentpoi_sde/agent/transport_security.py`: HTTPS transport enforcement (loopback HTTP only), and automated regex scrubbing of private keys (RSA, OpenSSH, EC) and credential patterns prior to prompt dispatch.
+
 ### Delivery status
 
-All of P6–P10 are implemented; the module list above is the shipped layout, and the phase headings
-are retained here as the design record rather than as a to-do list.
+All of P6–P16 are implemented and verified; the module list above represents the production layout, and the phase headings are retained here as the historical architectural design record.

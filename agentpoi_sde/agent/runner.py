@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -23,11 +24,15 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from agentpoi_sde.agent.armor import wrap_envelopes
 from agentpoi_sde.agent.llm_provider import OpenRouterProvider
 from agentpoi_sde.anchor.repo_anchor import RepositoryStateAnchor
+from agentpoi_sde.delta.mutation_delta import MutationDeltaExtractor
 from agentpoi_sde.domain import CodeMutation, MutationOp
 from agentpoi_sde.facade import DevGuard
+from agentpoi_sde.graph.arch_ledger import ArchitecturalLedger
+from agentpoi_sde.graph.context_router import CryptographicContextRouter, RoutedContextBundle
 from agentpoi_sde.graph.graph_indexer import GraphIndexer
 from agentpoi_sde.graph.merkle_graph import MerkleKnowledgeGraph, NodeType
 from agentpoi_sde.sink.atomic_writer import AtomicDiskWriter
+from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
 
 
 @dataclass
@@ -163,6 +168,7 @@ class AutonomousAgentRunner:
         interactive: bool = False,
         model: Optional[str] = None,
         api_key: Optional[str] = None,
+        rollback_on_failure: bool = False,
     ) -> None:
         self.repo_path = Path(repo_path).resolve()
         self.max_steps = max_steps
@@ -170,11 +176,25 @@ class AutonomousAgentRunner:
         self.interactive = interactive
         self.model = model
         self.api_key = api_key
+        self.rollback_on_failure = rollback_on_failure
         self.guard = guard if guard is not None else self._init_default_guard()
         self.provider = provider if provider is not None else OpenRouterProvider(api_key=api_key, model=model)
         self.graph_indexer = GraphIndexer()
-        self.merkle_graph = MerkleKnowledgeGraph()
+
+        # Unify Merkle Knowledge Graph with DevGuard
+        if not hasattr(self.guard, "merkle_graph") or self.guard.merkle_graph is None:
+            self.guard.merkle_graph = MerkleKnowledgeGraph()
+        self.merkle_graph = self.guard.merkle_graph
+
+        # Unify Architectural Ledger with DevGuard
+        if not hasattr(self.guard, "arch_ledger") or self.guard.arch_ledger is None:
+            self.guard.arch_ledger = ArchitecturalLedger()
+        self.arch_ledger = self.guard.arch_ledger
+
         self.transitions: List[StateTransitionRecord] = []
+        self._initial_workspace: Dict[str, str] = {}
+        self._touched_files: Dict[str, Optional[str]] = {}
+        self.last_routed_bundle: Optional[RoutedContextBundle] = None
 
     def _init_default_guard(self) -> DevGuard:
         """Initialize DevGuard from repo directory anchor with atomic disk writing enabled."""
@@ -199,13 +219,71 @@ class AutonomousAgentRunner:
                     {"path": path, "size": len(content)},
                 )
 
+    def _record_pre_mutation_state(self, rel_path: str) -> None:
+        """Record pre-mutation content for a file path in touch journal if not already tracked."""
+        norm_path = rel_path.replace("\\", "/").strip()
+        if norm_path not in self._touched_files:
+            target = self.repo_path / norm_path
+            if target.exists() and target.is_file():
+                try:
+                    self._touched_files[norm_path] = target.read_text(encoding="utf-8")
+                except Exception:
+                    self._touched_files[norm_path] = self._initial_workspace.get(norm_path)
+            elif norm_path in self._initial_workspace:
+                self._touched_files[norm_path] = self._initial_workspace[norm_path]
+            else:
+                self._touched_files[norm_path] = None
+
     def _write_disk_mutation(self, mutation: CodeMutation) -> None:
         """Write approved mutation to disk atomically if not already applied by DevGuard."""
+        rel_path = mutation.path.replace("\\", "/").strip()
+        if rel_path not in self._touched_files:
+            self._record_pre_mutation_state(rel_path)
+
         if self.guard.apply_to_disk and self.guard.disk_writer is not None:
             return  # Already written atomically via DevGuard
         if not self.repo_path.is_dir():
             return
         AtomicDiskWriter(str(self.repo_path)).apply_mutation(mutation)
+
+    def rollback(self) -> None:
+        """Atomically revert workspace, repository anchor, disk state, and Merkle graph to R0/M0."""
+        # 1. Revert guard workspace to snapshot
+        self.guard.workspace = dict(self._initial_workspace)
+
+        # 2. Re-anchor repository anchor back to R0
+        self.guard.anchor = RepositoryStateAnchor(
+            files=dict(self._initial_workspace),
+            policy=self.guard.anchor.policy,
+            dependency_allowlist=self.guard.anchor.declared_dependencies,
+            design_decisions=self.guard.anchor.design_decisions,
+        )
+        if hasattr(self.guard, "verifier") and self.guard.verifier is not None:
+            self.guard.verifier = RepoInvariantVerifier(
+                self.guard.anchor,
+                egress_allowlist=getattr(self.guard.verifier, "egress_allowlist", None),
+                invariant_config=getattr(self.guard, "_invariant_config", None),
+                working_anchor=getattr(self.guard, "working_anchor", None),
+            )
+        if hasattr(self.guard, "delta_extractor"):
+            self.guard.delta_extractor = MutationDeltaExtractor(self.guard.anchor.policy)
+
+        # 3. Revert touched disk files
+        if self.repo_path.is_dir():
+            for rel_path, orig_content in self._touched_files.items():
+                target = self.repo_path / rel_path
+                if orig_content is None:
+                    if target.exists() and target.is_file():
+                        target.unlink()
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(orig_content, encoding="utf-8")
+
+        # 4. Synchronize Merkle graph back to M0
+        fresh_graph = MerkleKnowledgeGraph()
+        self.merkle_graph = fresh_graph
+        self.guard.merkle_graph = fresh_graph
+        self._init_merkle_graph()
 
     def _update_merkle_graph(self, mutation: CodeMutation) -> None:
         """Update Merkle knowledge graph following an approved mutation."""
@@ -248,6 +326,7 @@ class AutonomousAgentRunner:
         curr_r: str,
     ) -> StateTransitionRecord:
         """Route mutation through DevGuard sink and update state anchors if approved."""
+        self._record_pre_mutation_state(mutation.path)
         verdict = self.guard.propose_mutation(mutation, intent_id, nonce=f"step-{t}")
         op_name = mutation.op.value if isinstance(mutation.op, MutationOp) else str(mutation.op)
 
@@ -256,14 +335,6 @@ class AutonomousAgentRunner:
             self._update_merkle_graph(mutation)
             post_m = self.merkle_graph.compute_merkle_root()
             post_r = self.guard.commit()
-            self.guard.arch_ledger.record_decision(
-                feature=f"Step-{t} {op_name} {mutation.path}",
-                how=f"Applied delta to {mutation.path}",
-                why=f"Intent: {intent_id}",
-                connections=[],
-                elements_used=[mutation.path],
-                graph_root=post_m,
-            )
         else:
             post_m = curr_m
             post_r = curr_r
@@ -300,6 +371,8 @@ class AutonomousAgentRunner:
         """Initialize session identifiers, anchors, Merkle graph, and authenticated intent."""
         effective_task = str(task or "").strip()
         tid = task_id or f"TASK-{hashlib.sha256(effective_task.encode('utf-8')).hexdigest()[:8]}"
+        self._initial_workspace = dict(self.guard.workspace)
+        self._touched_files = {}
         r0 = self.guard.anchor.tree_oid()
         self._init_merkle_graph()
         m0 = self.merkle_graph.compute_merkle_root()
@@ -309,8 +382,19 @@ class AutonomousAgentRunner:
     def _fetch_proposals(
         self, tid: str, task: str, untrusted: Optional[Sequence[Tuple[str, str]]]
     ) -> List[CodeMutation]:
-        """Fetch code mutations from provider using epistemic envelope prompt."""
-        envelope = wrap_envelopes(intent_id=tid, goal=task, untrusted_contexts=untrusted)
+        """Fetch code mutations from provider using epistemic envelope prompt and routed cryptographic context."""
+        all_untrusted = list(untrusted or [])
+        try:
+            router = CryptographicContextRouter(self.merkle_graph, self.guard.arch_ledger)
+            target_keys = list(self.guard.workspace.keys())
+            bundle: RoutedContextBundle = router.route_context(task_query=task, target_paths=target_keys)
+            self.last_routed_bundle = bundle
+            if bundle.formatted_context:
+                all_untrusted.append(("cryptographic_context_router", bundle.formatted_context))
+        except Exception:
+            pass
+
+        envelope = wrap_envelopes(intent_id=tid, goal=task, untrusted_contexts=all_untrusted)
         proposals = self.provider.propose_mutations(task, envelope, self.guard.workspace)
         return [p.to_code_mutation() if hasattr(p, "to_code_mutation") else p for p in proposals]
 
@@ -389,6 +473,7 @@ class AutonomousAgentRunner:
         allowed_paths: Optional[Sequence[str]] = None,
         context: str = "",
         untrusted_contexts: Optional[Sequence[Tuple[str, str]]] = None,
+        rollback_on_failure: Optional[bool] = None,
     ) -> UnforgeableVerificationReport:
         """Run the multi-step autonomous agent loop with fail-closed gating."""
         eff_task, tid, r0, m0 = self._init_run_session(task, task_id, allowed_paths)
@@ -398,13 +483,29 @@ class AutonomousAgentRunner:
         blocked = sum(1 for tr in self.transitions if tr.status == "BLOCKED")
         final_status = self._resolve_status(blocked, quit_flag, budget_flag, limit_flag)
 
+        do_rollback = self.rollback_on_failure if rollback_on_failure is None else rollback_on_failure
+        if not do_rollback and os.environ.get("AGENTPOI_ROLLBACK_ON_FAILURE") in ("1", "true", "True"):
+            do_rollback = True
+
+        final_r = self.guard.anchor.tree_oid()
+        final_m = self.merkle_graph.compute_merkle_root()
+
+        if do_rollback and final_status in ("VIOLATIONS_DETECTED", "USER_QUIT"):
+            self.rollback()
+            for tr in self.transitions:
+                if tr.status == "APPROVED":
+                    tr.status = "ROLLED_BACK"
+            applied = 0
+            final_r = r0
+            final_m = m0
+
         return UnforgeableVerificationReport(
             task_id=tid,
             goal=eff_task,
             initial_tree_oid=r0,
-            final_tree_oid=self.guard.anchor.tree_oid(),
+            final_tree_oid=final_r,
             initial_merkle_root=m0,
-            final_merkle_root=self.merkle_graph.compute_merkle_root(),
+            final_merkle_root=final_m,
             total_steps=len(self.transitions),
             mutations_applied=applied,
             mutations_blocked=blocked,

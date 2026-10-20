@@ -6,7 +6,9 @@ at the gateway boundary before tool execution.
 
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from agentpoi_sde.mcp.gateway import check_path_string, extract_diff_paths
 
 # ---------------------------------------------------------------------------
 # Tool 1: sde_ast_search
@@ -34,11 +36,20 @@ class ASTSearchInput(BaseModel):
         description="Whether to include internal and external import dependency maps",
     )
 
+    @field_validator("file_path")
+    @classmethod
+    def validate_file_path(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            err = check_path_string(v)
+            if err:
+                raise ValueError(err)
+        return v
+
 
 class SymbolMatch(BaseModel):
     """A matched top-level AST symbol within a repository file."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     name: str = Field(..., description="Symbol identifier name")
     kind: Literal["function", "class"] = Field(..., description="Symbol kind")
@@ -49,7 +60,7 @@ class SymbolMatch(BaseModel):
 class ASTSearchOutput(BaseModel):
     """Output payload from an AST symbol search."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     matches: List[SymbolMatch] = Field(
         default_factory=list,
@@ -87,11 +98,19 @@ class ComponentHarvestInput(BaseModel):
         description="Optional explicit source code override (defaults to repository content)",
     )
 
+    @field_validator("file_path")
+    @classmethod
+    def validate_file_path(cls, v: str) -> str:
+        err = check_path_string(v)
+        if err:
+            raise ValueError(err)
+        return v
+
 
 class ComponentHarvestOutput(BaseModel):
     """Output payload from safe component harvesting."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     symbol_name: str = Field(..., description="Isolated symbol identifier")
     file_path: str = Field(..., description="Repository-relative path of source")
@@ -150,6 +169,26 @@ class MutationProposalInput(BaseModel):
         description="If True, evaluates invariants without applying mutations to workspace",
     )
 
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            err = check_path_string(v)
+            if err:
+                raise ValueError(err)
+        return v
+
+    @field_validator("diff")
+    @classmethod
+    def validate_diff(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            diff_paths = extract_diff_paths(v)
+            for p in diff_paths:
+                err = check_path_string(p)
+                if err:
+                    raise ValueError(f"Path traversal in diff header: {err}")
+        return v
+
     @model_validator(mode="after")
     def validate_mutation_target(self) -> "MutationProposalInput":
         """Ensure either diff or both path and op are provided."""
@@ -164,7 +203,7 @@ class MutationProposalInput(BaseModel):
 class MutationVerdictItem(BaseModel):
     """Per-file verdict item for a proposed mutation."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     path: str = Field(..., description="Target file path")
     op: str = Field(..., description="Mutation operation applied or evaluated")
@@ -187,7 +226,7 @@ class MutationVerdictItem(BaseModel):
 class MutationProposalOutput(BaseModel):
     """Output payload from mutation evaluation and gating."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     verdicts: List[MutationVerdictItem] = Field(
         default_factory=list,
@@ -236,12 +275,21 @@ class TestRunnerInput(BaseModel):
         description="Optional pytest -k keyword filter expression",
     )
 
+    @field_validator("test_paths")
+    @classmethod
+    def validate_test_paths(cls, v: List[str]) -> List[str]:
+        for p in v:
+            err = check_path_string(p)
+            if err:
+                raise ValueError(err)
+        return v
+
 
 class TestFailureItem(BaseModel):
     """Structured details of a failed test case."""
 
     __test__ = False
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     test_id: str = Field(..., description="Full test node identifier")
     message: str = Field(..., description="Failure summary or assertion message")
@@ -252,7 +300,7 @@ class TestRunnerOutput(BaseModel):
     """Output payload from test suite execution."""
 
     __test__ = False
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     success: bool = Field(..., description="True if pytest exited with code 0")
     exit_code: int = Field(..., description="Subprocess return code")
@@ -265,3 +313,4 @@ class TestRunnerOutput(BaseModel):
         default_factory=list,
         description="Detailed list of test failures",
     )
+
