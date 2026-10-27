@@ -37,6 +37,7 @@ ui = [
 
 [project.scripts]
 agentpoi-sde = "agentpoi_sde.cli:main"
+agentpoi-scan = "agentpoi_scan.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -55,9 +56,10 @@ ignore = ["E501"]
 "scripts/*" = ["E402"]
 
 [tool.setuptools.packages.find]
-include = ["agent_poi*", "agentpoi_sde*"]
+include = ["agent_poi*", "agentpoi_sde*", "agentpoi_scan*"]
 
 [tool.setuptools.package-data]
 agent_poi = ["*.yaml", "config.yaml"]
 agentpoi_sde = ["*.yaml"]
+agentpoi_scan = ["*.yaml"]
 

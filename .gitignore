@@ -22,6 +22,8 @@ output/
 scratch/
 .system_generated/
 .gemini/
+# Local upstream fork used for integration development; never publish it.
+agent-archive-src/
 # Local audit campaign artifacts (audit-benchmark-spec §3)
 local_audit/
 legacy/

@@ -1,0 +1,33 @@
+scanners:
+  - python_sast
+  - unicode_trojan
+  - repo_injection
+  - autorun_surface
+  - semgrep
+  - gitleaks
+  - osv
+tiers:
+  local:
+    provider: ollama
+    model: qwen2.5-coder:14b
+    base_url: http://localhost:11434
+  frontier:
+    provider: openrouter
+    model: anthropic/claude-sonnet-5.5
+  verifier:
+    provider: ollama
+    model: llama3.2:3b
+router:
+  escalate_if:
+    severity_gte: high
+    local_confidence_lt: 0.7
+    on_autorun_surface: true
+    malware_score_gte: 0.6
+  budget_usd_per_repo: 2.0
+fetch:
+  max_files: 20000
+  max_total_mb: 500
+  max_depth: 20
+privacy:
+  local_only: false
+  redact_secrets: true
