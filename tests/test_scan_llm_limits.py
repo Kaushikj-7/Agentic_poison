@@ -128,6 +128,45 @@ def test_rpm_window_throttles_then_dispatches():
     t[0] = 101.0  # second request 1s later: same minute → sleep 59s, then send
     limiter.generate("p2")
     assert sleeps == [59.0] and inner.calls == 2
+    # the delayed request opened the new window — it must not leak into the old count
+    assert limiter._window_start == 101.0 and limiter._window_count == 1
+
+
+def test_rpm_third_call_two_minutes_apart_never_sleeps():
+    inner = CountingProvider()
+    t = [100.0]
+    sleeps = []
+    limiter = RateLimitedProvider(
+        inner,
+        requests_per_minute=1,
+        max_requests_per_scan=10,
+        max_backoff_seconds=59.0,
+        _sleep=lambda s: sleeps.append(s),
+        _now=lambda: t[0],
+    )
+    limiter.generate("p1")
+    t[0] = 101.0  # throttle → sleep 59s; window rebased to 101
+    limiter.generate("p2")
+    t[0] = 102.0  # 1s after the rebased window opened → must sleep again, not send free
+    limiter.generate("p3")
+    assert sleeps == [59.0, 59.0], "rebased window must re-throttle the next request"
+    assert inner.calls == 3
+
+
+def test_delegates_inner_availability_and_fails_closed():
+    inner = CountingProvider()
+    inner.is_available = lambda: False  # e.g. wrong-shaped API key
+    limiter = RateLimitedProvider(inner, requests_per_minute=1000, max_requests_per_scan=10)
+    bridge = TieredProviders({"frontier": limiter}, tiers=("frontier",))
+    assert limiter.is_available() is False
+    assert bridge.complete_json("frontier", "p", "s", ("ok",)) is None
+    assert inner.calls == 0, "unavailable inner provider must never receive requests"
+
+
+def test_delegation_tolerates_doubles_without_is_available():
+    inner = CountingProvider()  # no is_available attribute → counts as available
+    limiter = RateLimitedProvider(inner, requests_per_minute=1000, max_requests_per_scan=10)
+    assert limiter.is_available() is True
 
 
 def test_rpm_degrades_past_backoff_budget_instead_of_sending():

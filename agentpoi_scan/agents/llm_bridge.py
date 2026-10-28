@@ -108,11 +108,17 @@ class RateLimitedProvider:
     OpenRouter's ``:free`` models allow ~20 requests/minute and a small daily
     quota. Two hard caps are enforced locally before any request leaves the
     machine:
-    - ``requests_per_minute``: a sliding 60s window; when exhausted the caller
-      sleeps once for the remainder (capped by ``max_backoff_seconds``), then
-      degrades to unavailable — never spins all night.
+    - ``requests_per_minute``: a rolling 60s window; when exhausted, the next
+      request sleeps once for the remainder and that request opens the new
+      window. If the wait exceeds ``max_backoff_seconds`` the call refuses
+      instead (RuntimeError → ``complete_json`` returns None) — it never waits
+      indefinitely.
     - ``max_requests_per_scan``: once the total cap is hit, ``is_available``
       turns False and every further call degrades to None (fail-closed).
+
+    Availability also delegates to the wrapped provider (which rejects
+    wrong-shaped keys before any request is spent); providers without an
+    ``is_available`` attribute (test doubles) count as available.
     """
 
     def __init__(
@@ -136,7 +142,15 @@ class RateLimitedProvider:
         self._total = 0
 
     def is_available(self) -> bool:
-        return self._total < self.max_requests_per_scan
+        if self._total >= self.max_requests_per_scan:
+            return False
+        checker = getattr(self.provider, "is_available", None)
+        if not callable(checker):
+            return True
+        try:
+            return bool(checker())
+        except Exception:  # noqa: BLE001 fail-closed availability probe
+            return False
 
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
         wait: float = 0.0
@@ -156,6 +170,10 @@ class RateLimitedProvider:
             self._total += 1
         if wait > 0.0:
             self._sleep(wait)
+            with self._lock:
+                # this request opens the new window, so rebase the count here
+                self._window_start = self._now()
+                self._window_count = 1
         return self.provider.generate(prompt, system_prompt=system_prompt)
 
 
