@@ -13,10 +13,21 @@ tiers:
     base_url: http://localhost:11434
   frontier:
     provider: openrouter
-    model: anthropic/claude-sonnet-5.5
+    # Free-tier open-weight model (matches OPENROUTER_MODEL in the local .env).
+    # The key arrives from OPENROUTER_API_KEY in .env / env — never hardcoded.
+    # The paid-model escalation can be re-enabled by setting model to a
+    # non-:free id (request cascade still falls back to :free models on 4xx).
+    model: nvidia/nemotron-3.5-lightning:free
   verifier:
     provider: ollama
     model: llama3.2:3b
+limits:
+  # Free-tier OpenRouter guardrails (enforced locally, fail-closed in
+  # agentpoi_scan.agents.llm_bridge.RateLimitedProvider): a :free model allows
+  # ~20 req/min and a small daily quota, so stay well inside both.
+  requests_per_minute: 15
+  max_requests_per_scan: 40
+  max_backoff_seconds: 60.0
 router:
   escalate_if:
     severity_gte: high

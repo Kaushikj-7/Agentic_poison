@@ -129,9 +129,9 @@ class OpenRouterProvider(BaseLLMProvider):
 
     OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
     DEFAULT_FREE_MODELS = [
-        "nvidia/llama-3.1-nemotron-70b-instruct:free",
-        "nvidia/nemotron-3-super-120b-a12b:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
+        "nvidia/nemotron-3.5-lightning:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "google/gemma-4-31b-it:free",
     ]
 
     def __init__(
