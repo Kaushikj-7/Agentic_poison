@@ -1,24 +1,25 @@
-# AgentPOI-SDE: Fail-Closed Repository Invariant Verification for Autonomous Coding Agents
+# AgentPOI: Deterministic Invariant Defense Framework for Autonomous AI Agents
 
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI/CD Pipeline](https://github.com/Kaushikj-7/Agentic_poison/actions/workflows/ci.yml/badge.svg)](https://github.com/Kaushikj-7/Agentic_poison/actions)
-[![Domain: Software Engineering Agents](https://img.shields.io/badge/Domain-Software%20Engineering%20Agents-blueviolet.svg)]()
 [![Execution: 100% Offline CPU](https://img.shields.io/badge/Execution-100%25%20Offline%20CPU-brightgreen.svg)]()
-[![Public Facade: DevGuard](https://img.shields.io/badge/API-DevGuard-success.svg)]()
-[![CLI: agentpoi--sde](https://img.shields.io/badge/CLI-agentpoi--sde-blue.svg)]()
+[![Public Facades: DevGuard & FinancialGuard](https://img.shields.io/badge/Facades-DevGuard%20%7C%20FinancialGuard-success.svg)]()
+[![CLI: agentpoi-sde & agentpoi-scan](https://img.shields.io/badge/CLI-agentpoi--sde%20%7C%20agentpoi--scan-blue.svg)]()
+[![Dashboard: Streamlit](https://img.shields.io/badge/UI-Streamlit-red.svg)]()
 
-> **Abstract:** Autonomous coding agents that refactor repositories, upgrade dependencies and
-> execute CI workflows are acutely vulnerable to indirect prompt injection, context poisoning and
-> goal hijacking: a poisoned issue body, dependency README, MCP response or tool output can steer
-> the agent into editing a CI policy file, weakening a test, or leaking a credential. **AgentPOI-SDE**
-> secures the **code-mutation sink** (file write, edit, commit) with **Repository Invariant
-> Verification (RIV)**: the sink is a fail-closed checkpoint that a mutation may pass **if and only
-> if** it survives a deterministic, provenance-gated three-way match against the authenticated
-> **intent ℐ**, the immutable **repository anchor ℛ₀**, and a scoped **capability grant κ** — with
-> zero invariant violations. On the adaptive adversarial suite, the defence blocks **100.0% of
-> evasive mutations (EMAR 0.0%)** while preserving **100.0% of legitimate engineering tasks
-> (LTSR 100.0%)**, entirely offline on commodity CPU.
+> **Abstract:** Autonomous AI agents that modify software repositories, execute financial disbursements,
+> or analyze untrusted source code are acutely vulnerable to indirect prompt injection, context poisoning,
+> supply-chain backdoors, and goal hijacking. **AgentPOI** provides deterministic, fail-closed invariant
+> defense across three formally isolated domains:
+> 1. **Coding Agent Defense (`agentpoi_sde` / `DevGuard`)**: Enforces Repository Invariant Verification (RIV)
+>    at the code-mutation sink against intent contracts ℐ, immutable anchors ℛ₀,
+>    and nine sink invariants (I1–I9, D1) — blocking 100.0% of evasive attacks (`EMAR 0.0%`).
+> 2. **Zero-Host-Execution Vulnerability Scanner (`agentpoi_scan`)**: Inverts Anthropic's `oss-scanner` model
+>    into a pure parse-only static analyzer backed by an advisory multi-tier OpenRouter free-model cascade
+>    and a hardened interactive Streamlit security dashboard with strict DEC-105 fail-closed veto resistance.
+> 3. **Financial Agent Defense (`agent_poi` / `FinancialGuard`)**: Implements Contextual Invariant Verification (CIV)
+>    and Dual-State Epistemic Consensus (DSEC) protecting wire routing, payment limits, and ledger reconciliations.
 
 ---
 
@@ -367,36 +368,6 @@ _Generated from a live execution of the 40-scenario suite: 34 adversarial mutati
 
 ---
 
-## 5. Offline CPU Execution & Verification Commands
-
-A primary architectural requirement is **zero hardware dependency**: every verifier, delta
-extractor, graph indexer and benchmark harness runs locally on commodity CPU. No GPU, accelerator
-or external daemon is required, and the benchmark suite executes without network access.
-
-```bash
-# Unit + integration test suite
-pytest tests/ -v
-
-# Unified pre-flight gate: syntax, secrets, unit suite, the dynamic SDE benchmark,
-# docs-metrics sync, working tree, ledger and code principles (it also re-runs the
-# inherited financial-domain benchmark, which this branch does not modify)
-python scripts/ci_check.py --allow-dirty
-
-# Standalone AgentPOI-SDE dynamic benchmark
-agentpoi-sde benchmark --format markdown
-
-# Verify published metrics still match a live run (exits 1 on drift)
-python scripts/render_sde_metrics.py --check
-
-# Regenerate the architecture figure from a live benchmark execution
-python scripts/generate_sde_architecture_diagram.py
-
-# Inspect the ℛ₀ state anchor of this repository
-agentpoi-sde anchor . --json
-```
-
----
-
 ## 5. AgentPOI-Scan: Zero-Host-Execution Vulnerability Scanner & Dashboard
 
 **AgentPOI-Scan** provides parse-only, zero-host-execution security analysis of untrusted open-source and agentic software repositories, inspecting code without compiling, running, or installing packages.
@@ -423,7 +394,39 @@ agentpoi-scan dashboard --port 8501
 
 ---
 
-## 6. Documentation
+## 6. Offline CPU Execution & Verification Commands
+
+A primary architectural requirement is **zero hardware dependency**: every verifier, delta
+extractor, graph indexer and benchmark harness runs locally on commodity CPU. No GPU, accelerator
+or external daemon is required, and the benchmark suite executes without network access.
+
+```bash
+# Unit + integration test suite across all domains
+pytest tests/ -v -p no:cacheprovider
+
+# Targeted AgentPOI-Scan suite (191 tests)
+pytest -k scan -p no:cacheprovider -q
+
+# Unified pre-flight gate: syntax, secrets, unit suite, the dynamic SDE benchmark,
+# docs-metrics sync, working tree, ledger and code principles
+python scripts/ci_check.py --allow-dirty
+
+# Standalone AgentPOI-SDE dynamic benchmark
+agentpoi-sde benchmark --format markdown
+
+# Verify published metrics still match a live run (exits 1 on drift)
+python scripts/render_sde_metrics.py --check
+
+# Regenerate the architecture figure from a live benchmark execution
+python scripts/generate_sde_architecture_diagram.py
+
+# Inspect the ℛ₀ state anchor of this repository
+agentpoi-sde anchor . --json
+```
+
+---
+
+## 7. Documentation Index
 
 - [Scanner & Dashboard Architecture](docs/SCANNER_DASHBOARD_ARCHITECTURE.md): Zero-host-execution
   SAST pipeline, DEC-105 invariant, OpenRouter free-tier cascade, and Streamlit dashboard design.
@@ -436,12 +439,12 @@ agentpoi-scan dashboard --port 8501
 - [Novelty Gap Analysis](docs/NOVELTY_GAP.md): literature survey of 2025/2026 coding-agent
   vulnerabilities (IDEsaster, Rules File Backdoor, AIShellJack, ClawHavoc) and the contribution
   novelty proof.
-- [Contributor & Development Guide](docs/DEVELOPMENT.md): file classification, abstraction
-  boundaries and the branch/commit invariants for this repository.
+- [Contributor & Development Guide](docs/DEVELOPMENT.md): multi-domain isolation, file classification,
+  abstraction boundaries and the branch/commit invariants for this repository.
 
 ---
 
-## 7. Literature & Citations
+## 8. Literature & Citations
 
 If you use AgentPOI-SDE or its Repository Invariant Verification methodology in your research,
 please cite the impossibility result that motivates non-linguistic enforcement:

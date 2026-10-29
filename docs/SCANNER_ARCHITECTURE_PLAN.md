@@ -1,7 +1,17 @@
-# Agentic OSS Vulnerability Scanner — Architecture Plan
+# Agentic OSS Vulnerability Scanner — Architecture Plan & Implementation Record
 
-**Status:** PLAN ONLY — nothing implemented, no code touched (per `/plan` methodology).
-**Branch:** `codebleak`. Working name of the new package: `agentpoi_scan/` (third package, sibling of `agent_poi/` and `agentpoi_sde/`).
+**Status:** IMPLEMENTED & DELIVERED (Branch `agentpoi-scan-dashboard`).
+**Package:** `agentpoi_scan/` (Formally isolated third domain alongside `agent_poi/` and `agentpoi_sde/`).
+**Verification:** 191/191 scan domain tests passing; 1,107/1,107 total workspace CI verification tests passing.
+
+---
+
+## Delivery Summary & Verification Record
+- **Phase 0–1 (Scanner Core & Detection Sinks)**: Delivered `SafeExtract`, `PythonSastScanner`, `AutorunScanner`, and `LegacyPatternScanner` (PHP SQLi, unescaped `exec()`, `unserialize()`, and obfuscated dynamic webshells).
+- **Phase 2 (Advisory Free LLM Bridge)**: Multi-tier cascade wired to OpenRouter `:free` endpoints (`nvidia/nemotron-3.5-lightning:free`, `google/gemma-4-31b-it:free`, `qwen/qwen-2.5-coder-32b-instruct:free`) with per-tier rate limits (max 45 req/scan) and prompt credential scrubbing.
+- **Phase 3 (Streamlit Security Dashboard)**: 4-tab interactive dashboard (`Findings Matrix`, `Autorun Surface`, `Category Breakdown`, `SARIF Export`) hardened against Stored XSS via `html.escape`.
+- **Phase 4 (Fixtures & Benchmarking)**: Ground-truth legacy PHP fixtures (`tests/fixtures/legacy_php_repo/`) and complex Langflow agentic snapshots (`tests/fixtures/langflow_snapshot/`).
+- **Phase 5 (Pre-Flight CI Integration)**: Formally wired into `scripts/ci_check.py` with zero syntax errors and zero secret leaks.
 
 ---
 
