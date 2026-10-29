@@ -83,7 +83,7 @@ class ScanStore:
 
     def list_findings(
         self,
-        scan_id: int,
+        scan_id: Optional[int] = None,
         severity: Optional[str] = None,
         category: Optional[str] = None,
     ) -> List[Finding]:
@@ -91,15 +91,18 @@ class ScanStore:
 
     def get_findings_filtered(
         self,
-        scan_id: int,
+        scan_id: Optional[int] = None,
         severity: Optional[str] = None,
         category: Optional[str] = None,
         status: Optional[str] = None,
         search: Optional[str] = None,
     ) -> List[Finding]:
         """Queries findings matching filter constraints with parameterized SQL."""
-        query = "SELECT payload FROM findings WHERE scan_id = ?"
-        params: list = [int(scan_id)]
+        query = "SELECT payload FROM findings WHERE 1=1"
+        params: list = []
+        if scan_id is not None:
+            query += " AND scan_id = ?"
+            params.append(int(scan_id))
         if severity and severity.strip().lower() != "all":
             query += " AND lower(json_extract(payload, '$.severity')) = ?"
             params.append(severity.strip().lower())

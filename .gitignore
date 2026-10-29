@@ -191,3 +191,6 @@ tests/test_worktree_runner.py
 docs/research/
 scripts/run_gemini_onetime_probe.py
 tests/test_gemini_probe.py
+.agentpoi_scan/
+*.sarif
+

@@ -225,6 +225,9 @@ def build_default_providers(config: Dict[str, Any]) -> Tuple[TieredProviders, Di
 
     providers: Dict[str, Any] = {}
     unavailable: Dict[str, str] = {}
+    privacy = config.get("privacy")
+    if (isinstance(privacy, dict) and privacy.get("local_only")) or privacy is True:
+        return TieredProviders({}), {"all": "privacy.local_only enabled (100% offline CPU)"}
     limits = config.get("limits") or {}
     tier_caps = limits.get("tier_caps") or limits.get("tiers") or {}
 

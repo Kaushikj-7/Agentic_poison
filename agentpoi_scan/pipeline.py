@@ -9,7 +9,7 @@ stage degrades gracefully when a component is unavailable.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional
 
 from agentpoi_scan.agents.analyst import AnalystAgent, VerifierAgent
@@ -17,7 +17,7 @@ from agentpoi_scan.agents.llm_bridge import TieredProviders, build_default_provi
 from agentpoi_scan.agents.router import EscalationPolicy, Router
 from agentpoi_scan.agents.triage import TriageAgent
 from agentpoi_scan.fetch.registry import load_scan_registry
-from agentpoi_scan.fetch.safe_extract import extract_snapshot
+from agentpoi_scan.fetch.safe_extract import Manifest, extract_snapshot
 from agentpoi_scan.fetch.snapshot_client import SnapshotClient
 from agentpoi_scan.findings.model import Finding, dedupe
 from agentpoi_scan.report.sarif import write_sarif
@@ -133,19 +133,46 @@ class ScanPipeline:
 
     # -- zones 2..4 ------------------------------------------------------------
     def scan_target(self, repo_url: str, ref: Optional[str] = None, workdir: Path | None = None) -> ScanReport:
-        # Zone 1
-        snapshot, snapshot_dir, manifest = self.fetch_and_extract(repo_url, ref=ref, workdir=workdir)
+        target_path = Path(repo_url)
+        if target_path.is_dir():
+            snapshot_dir = target_path.resolve()
+            repo_name = snapshot_dir.name or target_path.name or "local-target"
+            commit_sha = "0" * 40
+            files = {}
+            for p in sorted(snapshot_dir.rglob("*")):
+                if p.is_symlink():
+                    continue
+                if p.is_file():
+                    rel = str(p.relative_to(snapshot_dir)).replace("\\", "/")
+                    parts = PurePosixPath(rel).parts
+                    if any(part in {".git", ".agentpoi_scan", "__pycache__"} for part in parts):
+                        continue
+                    files[rel] = p.stat().st_size
+            manifest = Manifest(
+                snapshot_dir=str(snapshot_dir),
+                commit_sha=commit_sha,
+                files=files,
+            )
+            snapshot_repo = repo_name
+            snapshot_commit = commit_sha
+        else:
+            # Zone 1
+            snapshot, snapshot_dir, manifest = self.fetch_and_extract(repo_url, ref=ref, workdir=workdir)
+            snapshot_repo = snapshot.repo
+            snapshot_commit = snapshot.commit_sha
         # Zone 2
-        findings = self.run_scanners(snapshot_dir, snapshot.repo, snapshot.commit_sha, manifest)
+        findings = self.run_scanners(snapshot_dir, snapshot_repo, snapshot_commit, manifest)
         # Zone 3
         providers, _unavail = build_default_providers(self.cfg)
         report = self.refine(findings, snapshot_dir, providers)
+        report.repo = snapshot_repo
+        report.commit_sha = snapshot_commit
         # Zone 4
         report.risk = {
             "vulnerable": max((f.vulnerability for f in report.findings), default=0.0),
             "malicious": max((f.maliciousness for f in report.findings), default=0.0),
         }
-        report.scan_id = self.store.add_scan(snapshot.repo, snapshot.commit_sha, report.findings)
+        report.scan_id = self.store.add_scan(snapshot_repo, snapshot_commit, report.findings)
         write_sarif(report.findings, self.sarif_path)
         return report
 

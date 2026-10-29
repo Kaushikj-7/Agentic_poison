@@ -26,11 +26,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_scan = sub.add_parser("scan", help="scan one GitHub repository")
-    p_scan.add_argument("repo", help="GitHub URL or owner/name")
+    p_scan = sub.add_parser("scan", aliases=["run"], help="scan one GitHub repository or local directory")
+    p_scan.add_argument("repo", help="GitHub URL, owner/name, or local directory path")
     p_scan.add_argument("--branch", default=None, help="branch/SHA to pin (defaults to repo HEAD)")
     p_scan.add_argument("--config", default=None, help="path to scanner_config.yaml")
-    p_scan.add_argument("--sarif", default=None, help="override the SARIF output path")
+    p_scan.add_argument("--sarif", "--output-sarif", dest="sarif", default=None, help="override the SARIF output path")
+    p_scan.add_argument("--offline", "--no-llm", dest="offline", action="store_true", help="run 100%% offline CPU without advisory LLM triage")
     p_scan.add_argument("--workdir", default=None, help="working directory for snapshots/store")
 
     p_validate = sub.add_parser("validate", help="validate a scan_registry directory")
@@ -78,10 +79,14 @@ def main(argv: list[str] | None = None) -> int:
         print("REGISTRY: OK")
         return 0
 
-    if args.command == "scan":
+    if args.command in ("scan", "run"):
         from agentpoi_scan.pipeline import ScanPipeline
 
         cfg = _load_config(args.config or Path(__file__).parent / "config" / "scanner_config.yaml")
+        if getattr(args, "offline", False):
+            if not isinstance(cfg.get("privacy"), dict):
+                cfg["privacy"] = {}
+            cfg["privacy"]["local_only"] = True
         if args.sarif:
             cfg["sarif_path"] = args.sarif
         pipeline = ScanPipeline(config=cfg, store_path=Path(args.workdir or ".agentpoi_scan") / "scan_store.sqlite3")
