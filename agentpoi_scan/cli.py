@@ -36,7 +36,35 @@ def main(argv: list[str] | None = None) -> int:
     p_validate = sub.add_parser("validate", help="validate a scan_registry directory")
     p_validate.add_argument("registry", help="path to scan_registry/<name>/ directories")
 
+    p_dashboard = sub.add_parser("dashboard", help="launch interactive Streamlit dashboard")
+    p_dashboard.add_argument("--port", type=int, default=8501, help="port to bind the dashboard")
+    p_dashboard.add_argument(
+        "--store-path",
+        default=".agentpoi_scan/scan_store.sqlite3",
+        help="path to SQLite scan store",
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "dashboard":
+        try:
+            import streamlit  # noqa: F401
+        except (ImportError, ModuleNotFoundError):
+            print(
+                "ERROR: Streamlit is not installed. Install with 'pip install agent-poi[scan-ui]' to run the dashboard."
+            )
+            return 1
+
+        from agentpoi_scan.ui.dashboard import run_dashboard, st
+
+        if st is None:
+            print(
+                "ERROR: Streamlit is not installed. Install with 'pip install agent-poi[scan-ui]' to run the dashboard."
+            )
+            return 1
+
+        run_dashboard(store_path=args.store_path, port=args.port)
+        return 0
 
     if args.command == "validate":
         from agentpoi_scan.pipeline import validate_targets

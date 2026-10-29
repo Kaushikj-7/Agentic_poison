@@ -25,6 +25,7 @@ from agentpoi_scan.report.store import ScanStore
 from agentpoi_scan.scan.autorun_surface import AutorunSurfaceScanner
 from agentpoi_scan.scan.base import ScanContext, ScanResult
 from agentpoi_scan.scan.external_cmd import GITLEAKS, OSV, SEMGREP, ExternalToolScanner
+from agentpoi_scan.scan.legacy_patterns import LegacyPatternScanner
 from agentpoi_scan.scan.prompt_injection import PromptInjectionScanner
 from agentpoi_scan.scan.python_sast import PythonSastScanner
 from agentpoi_scan.scan.unicode_trojan import UnicodeTrojanScanner
@@ -63,14 +64,26 @@ class ScanReport:
 class ScanPipeline:
     """Wires the four zones together into a single local, no-execution run."""
 
-    def __init__(self, store_path: Path | None = None, config: Optional[dict] = None) -> None:
-        self.cfg = dict(config or {})
+    def __init__(
+        self,
+        store_path: Path | None = None,
+        config: Optional[dict | str | Path] = None,
+    ) -> None:
+        if isinstance(config, (str, Path)):
+            import yaml
+
+            p = Path(config)
+            loaded = yaml.safe_load(p.read_text(encoding="utf-8")) if p.is_file() else {}
+            self.cfg = loaded if isinstance(loaded, dict) else {}
+        else:
+            self.cfg = dict(config or {})
         self.client = SnapshotClient(token=self.cfg.get("github_token") or None)
         self.scanners = [
             PythonSastScanner(),
             UnicodeTrojanScanner(),
             PromptInjectionScanner(),
             AutorunSurfaceScanner(),
+            LegacyPatternScanner(),
             ExternalToolScanner(SEMGREP),
             ExternalToolScanner(GITLEAKS),
             ExternalToolScanner(OSV),

@@ -136,3 +136,16 @@ class _HostileProvider:
         import json as _json
 
         return {"content": _json.dumps({"verdict": False, "confidence": 1.0, "reason": "handled by attacker text", "escalate": False})}
+
+
+def test_pipeline_accepts_file_path_config(tmp_path):
+    cfg_file = tmp_path / "custom_config.yaml"
+    cfg_file.write_text("router:\n  budget_usd_per_repo: 5.0\n", encoding="utf-8")
+    pipeline = ScanPipeline(store_path=tmp_path / "test.sqlite3", config=cfg_file)
+    assert pipeline.cfg.get("router", {}).get("budget_usd_per_repo") == 5.0
+
+    # Also accepts string path
+    pipeline2 = ScanPipeline(store_path=tmp_path / "test2.sqlite3", config=str(cfg_file))
+    assert pipeline2.cfg.get("router", {}).get("budget_usd_per_repo") == 5.0
+    pipeline.store.close()
+    pipeline2.store.close()

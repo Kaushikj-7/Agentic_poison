@@ -201,6 +201,19 @@ def extract_json(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+DEFAULT_FREE_MODELS: Dict[str, str] = {
+    "local": "nvidia/nemotron-3.5-lightning:free",
+    "frontier": "google/gemma-4-31b-it:free",
+    "verifier": "qwen/qwen-2.5-coder-32b-instruct:free",
+}
+
+DEFAULT_TIER_CAPS: Dict[str, int] = {
+    "local": 20,
+    "frontier": 15,
+    "verifier": 10,
+}
+
+
 def build_default_providers(config: Dict[str, Any]) -> Tuple[TieredProviders, Dict[str, str]]:
     """Builds the tiered providers from scanner_config.yaml-shaped data.
 
@@ -212,43 +225,61 @@ def build_default_providers(config: Dict[str, Any]) -> Tuple[TieredProviders, Di
 
     providers: Dict[str, Any] = {}
     unavailable: Dict[str, str] = {}
+    limits = config.get("limits") or {}
+    tier_caps = limits.get("tier_caps") or limits.get("tiers") or {}
 
-    local_cfg = (config.get("tiers") or {}).get("local") or {}
-    if local_cfg.get("provider") == "ollama":
-        providers["local"] = OllamaProvider(
-            base_url=local_cfg.get("base_url", "http://localhost:11434"),
-            model=local_cfg.get("model", "qwen2.5-coder:14b"),
-        )
-    else:
-        unavailable["local"] = f"unsupported local provider: {local_cfg.get('provider')!r}"
+    for tier_name in ("local", "frontier", "verifier"):
+        tier_cfg = (config.get("tiers") or {}).get(tier_name) or {}
+        provider_type = tier_cfg.get("provider")
 
-    frontier_cfg = (config.get("tiers") or {}).get("frontier") or {}
-    if frontier_cfg.get("provider") == "openrouter":
-        key = os.environ.get("OPENROUTER_API_KEY", "")
-        if key:
-            # model resolution: explicit config value wins; otherwise the
-            # provider falls back to OPENROUTER_MODEL (from .env), then its
-            # built-in open-weight free default.
-            frontier = OpenRouterProvider(api_key=key, model=frontier_cfg.get("model") or None)
-            limits = config.get("limits") or {}
-            providers["frontier"] = RateLimitedProvider(
-                frontier,
-                requests_per_minute=limits.get("requests_per_minute", 15),
-                max_requests_per_scan=limits.get("max_requests_per_scan", 40),
-                max_backoff_seconds=limits.get("max_backoff_seconds", 60.0),
+        if provider_type == "ollama":
+            default_ollama = {
+                "local": "qwen2.5-coder:14b",
+                "frontier": "qwen2.5-coder:32b",
+                "verifier": "llama3.2:3b",
+            }
+            providers[tier_name] = OllamaProvider(
+                base_url=tier_cfg.get("base_url", "http://localhost:11434"),
+                model=tier_cfg.get("model", default_ollama.get(tier_name, "llama3.2:3b")),
             )
-        else:
-            unavailable["frontier"] = "OPENROUTER_API_KEY not set"
-    else:
-        unavailable["frontier"] = f"unsupported frontier provider: {frontier_cfg.get('provider')!r}"
+        elif provider_type == "openrouter":
+            key = os.environ.get("OPENROUTER_API_KEY", "")
+            if key:
+                model = tier_cfg.get("model")
+                if not model and tier_name == "frontier":
+                    model = os.environ.get("OPENROUTER_MODEL")
+                if not model:
+                    model = DEFAULT_FREE_MODELS.get(tier_name)
 
-    verifier_cfg = (config.get("tiers") or {}).get("verifier") or {}
-    if verifier_cfg.get("provider") == "ollama":
-        providers["verifier"] = OllamaProvider(
-            base_url=verifier_cfg.get("base_url", "http://localhost:11434"),
-            model=verifier_cfg.get("model", "llama3.2:3b"),
-        )
-    else:
-        unavailable["verifier"] = f"unsupported verifier provider: {verifier_cfg.get('provider')!r}"
+                provider_inst = OpenRouterProvider(api_key=key, model=model)
+
+                if isinstance(tier_caps.get(tier_name), dict):
+                    tier_max = tier_caps[tier_name].get(
+                        "max_requests_per_scan", DEFAULT_TIER_CAPS.get(tier_name, 15)
+                    )
+                    tier_rpm = tier_caps[tier_name].get(
+                        "requests_per_minute", limits.get("requests_per_minute", 15)
+                    )
+                elif isinstance(tier_caps.get(tier_name), int):
+                    tier_max = tier_caps[tier_name]
+                    tier_rpm = limits.get("requests_per_minute", 15)
+                else:
+                    if tier_name == "frontier" and "max_requests_per_scan" in limits:
+                        tier_max = limits["max_requests_per_scan"]
+                    else:
+                        tier_max = DEFAULT_TIER_CAPS.get(tier_name, 15)
+                    tier_rpm = limits.get("requests_per_minute", 15)
+
+                max_backoff = float(limits.get("max_backoff_seconds", 60.0))
+                providers[tier_name] = RateLimitedProvider(
+                    provider_inst,
+                    requests_per_minute=tier_rpm,
+                    max_requests_per_scan=tier_max,
+                    max_backoff_seconds=max_backoff,
+                )
+            else:
+                unavailable[tier_name] = "OPENROUTER_API_KEY not set"
+        else:
+            unavailable[tier_name] = f"unsupported {tier_name} provider: {provider_type!r}"
 
     return TieredProviders(providers), unavailable

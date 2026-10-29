@@ -34,6 +34,10 @@ ui = [
     "pandas>=2.0",
     "matplotlib>=3.7",
 ]
+scan-ui = [
+    "streamlit>=1.30",
+    "pandas>=2.0",
+]
 
 [project.scripts]
 agentpoi-sde = "agentpoi_sde.cli:main"

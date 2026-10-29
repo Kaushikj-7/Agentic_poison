@@ -1,7 +1,7 @@
 """Local Pre-Flight CI/CD Verification Runner.
 
 Executes all verification gates locally before commits or pushes to GitHub:
-1. Python Syntax & Compilation (agent_poi, agentpoi_sde, tests)
+1. Python Syntax & Compilation (agent_poi, agentpoi_sde, agentpoi_scan, tests)
 2. Secrets & Credential Audit across domains
 3. Automated Unit Tests across domains (pytest)
 4. Dual Dynamic Benchmarks:
@@ -28,9 +28,9 @@ if workspace_root not in sys.path:
 
 
 def check_syntax() -> Tuple[bool, int]:
-    """Compile and parse all python files in agent_poi, agentpoi_sde, and tests to catch syntax errors."""
+    """Compile and parse all python files in agent_poi, agentpoi_sde, agentpoi_scan, and tests to catch syntax errors."""
     errors = 0
-    for d in ("agent_poi", "agentpoi_sde", "tests"):
+    for d in ("agent_poi", "agentpoi_sde", "agentpoi_scan", "tests"):
         if not os.path.isdir(d):
             continue
         for root, _, files in os.walk(d):
@@ -53,7 +53,7 @@ def check_secrets() -> Tuple[bool, List[str]]:
         re.IGNORECASE,
     )
     violations: List[str] = []
-    for domain_dir in ("agent_poi", "agentpoi_sde"):
+    for domain_dir in ("agent_poi", "agentpoi_sde", "agentpoi_scan"):
         if not os.path.isdir(domain_dir):
             continue
         for root, _, files in os.walk(domain_dir):
@@ -258,11 +258,11 @@ def main():
 
     all_passed = True
 
-    # 1. Syntax (agent_poi, agentpoi_sde, tests)
+    # 1. Syntax (agent_poi, agentpoi_sde, agentpoi_scan, tests)
     syntax_ok, err_count = check_syntax()
     if not syntax_ok:
         all_passed = False
-    print(f"[*] Syntax Check:        {'OK (agent_poi, agentpoi_sde, tests)' if syntax_ok else f'FAIL ({err_count} errors)'}")
+    print(f"[*] Syntax Check:        {'OK (agent_poi, agentpoi_sde, agentpoi_scan, tests)' if syntax_ok else f'FAIL ({err_count} errors)'}")
 
     # 2. Secrets across domains
     secrets_ok, secret_issues = check_secrets()

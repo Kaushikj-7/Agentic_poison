@@ -397,8 +397,36 @@ agentpoi-sde anchor . --json
 
 ---
 
+## 5. AgentPOI-Scan: Zero-Host-Execution Vulnerability Scanner & Dashboard
+
+**AgentPOI-Scan** provides parse-only, zero-host-execution security analysis of untrusted open-source and agentic software repositories, inspecting code without compiling, running, or installing packages.
+
+### 5.1 Key Capabilities
+- **Legacy Vulnerability Detection**: Full AST and multi-line regex scanning for PHP SQL injection (`mysqli_query`, `$pdo->query`), command execution (`exec`, `system`, backticks), unsafe object deserialization (`unserialize`), and dynamic webshell backdoors (`eval`, `base64_decode`, `create_function`).
+- **Complex Agentic Snapshot Scanning (Langflow)**: Detection of autorun surfaces (`pull_request_target`, `postinstall` curl pipes, VS Code `folderOpen` tasks), unsafe Python deserialization (`pickle.loads`, `shelve.open`, `yaml.unsafe_load`, `torch.load` missing `weights_only=True`), and indirect prompt injection directives in prompts and docstrings.
+- **Advisory OpenRouter Free-Tier Cascade**: Multi-tier triage using `:free` open-weight models (`nvidia/nemotron-3.5-lightning:free`, `google/gemma-4-31b-it:free`, `qwen/qwen-2.5-coder-32b-instruct:free`) with per-tier rate limiting (max 45 requests/scan).
+- **DEC-105 Invariant (Fail-Closed Gate)**: Authoritative high/critical findings emitted by deterministic scanners cannot be vetoed or silenced by LLM triage (honeypot flip rate = 0%).
+- **Hardened Streamlit Dashboard**: 4-tab interactive interface (Findings Matrix, Autorun Surface, Category Breakdown, SARIF 2.1.0 Export) protected against Stored XSS via strict HTML escaping (`html.escape`).
+
+### 5.2 CLI & Dashboard Usage
+
+```bash
+# Scan a local repository with console summary
+agentpoi-scan run tests/fixtures/legacy_php_repo
+
+# Scan an agentic snapshot and generate a SARIF 2.1.0 report
+agentpoi-scan run tests/fixtures/langflow_snapshot --output-sarif results.sarif
+
+# Launch the interactive Streamlit dashboard
+agentpoi-scan dashboard --port 8501
+```
+
+---
+
 ## 6. Documentation
 
+- [Scanner & Dashboard Architecture](docs/SCANNER_DASHBOARD_ARCHITECTURE.md): Zero-host-execution
+  SAST pipeline, DEC-105 invariant, OpenRouter free-tier cascade, and Streamlit dashboard design.
 - [SDE Architecture Specification](docs/SDE_ARCHITECTURE.md): the seven-tier pipeline, ℛ₀ anchoring,
   the nine sink invariants (I1–I9) plus design gate D1, component map, threat model and the CLI
   diff-verification sequence.

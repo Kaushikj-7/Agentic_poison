@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "langflow-snapshot"
+version = "0.1.0"
+description = "Synthetic Langflow agentic repository fixture for AgentPOI-Scan verification"
+authors = [{ name = "AgentPOI Test Team" }]
+dependencies = [
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]

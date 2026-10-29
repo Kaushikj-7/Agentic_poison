@@ -3,31 +3,35 @@ scanners:
   - unicode_trojan
   - repo_injection
   - autorun_surface
+  - legacy_patterns
   - semgrep
   - gitleaks
   - osv
 tiers:
   local:
-    provider: ollama
-    model: qwen2.5-coder:14b
-    base_url: http://localhost:11434
+    provider: openrouter
+    model: nvidia/nemotron-3.5-lightning:free
   frontier:
     provider: openrouter
     # Free-tier open-weight model (matches OPENROUTER_MODEL in the local .env).
     # The key arrives from OPENROUTER_API_KEY in .env / env — never hardcoded.
     # The paid-model escalation can be re-enabled by setting model to a
     # non-:free id (request cascade still falls back to :free models on 4xx).
-    model: nvidia/nemotron-3.5-lightning:free
+    model: google/gemma-4-31b-it:free
   verifier:
-    provider: ollama
-    model: llama3.2:3b
+    provider: openrouter
+    model: qwen/qwen-2.5-coder-32b-instruct:free
 limits:
   # Free-tier OpenRouter guardrails (enforced locally, fail-closed in
   # agentpoi_scan.agents.llm_bridge.RateLimitedProvider): a :free model allows
   # ~20 req/min and a small daily quota, so stay well inside both.
   requests_per_minute: 15
-  max_requests_per_scan: 40
+  max_requests_per_scan: 45
   max_backoff_seconds: 60.0
+  tier_caps:
+    local: 20
+    frontier: 15
+    verifier: 10
 router:
   escalate_if:
     severity_gte: high
