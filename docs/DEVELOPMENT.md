@@ -22,7 +22,7 @@ The platform supports three formally isolated application domains:
 
 3. **Financial & Transactional Agent Defense (`agent_poi`)**:
    - **Scope**: Contextual Invariant Verification (CIV), immutable state anchor ($\mathcal{S}_0$), wire disbursements, invoice verification, escrow settlement, and ledger reconciliation.
-   - **Public Facade**: `agent_poi.financial.FinancialGuard`.
+   - **Public Facade**: `agent_poi.FinancialGuard` (`facade.py`).
    - **Architecture Specification**: Embedded in core module specifications.
 
 ---

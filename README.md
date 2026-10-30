@@ -23,7 +23,7 @@
   - [3.3 Interactive Dashboard Launch](#33-interactive-dashboard-launch)
   - [3.4 Programmatic Python SDK](#34-programmatic-python-sdk)
 - [4. Interactive Security Dashboard Walkthrough](#4-interactive-security-dashboard-walkthrough)
-  - [4.1 Four-Tab Interface](#41-four-tab-interface)
+  - [4.1 Six-Tab Interface](#41-six-tab-interface)
   - [4.2 Stored XSS Defense (`html.escape`)](#42-stored-xss-defense-htmlescape)
 - [5. Supported Detection Rules Matrix (with CWE Mappings)](#5-supported-detection-rules-matrix-with-cwe-mappings)
 - [6. Advisory Multi-Tier LLM Bridge & Epistemic DEC-105 Invariant](#6-advisory-multi-tier-llm-bridge--epistemic-dec-105-invariant)
@@ -431,6 +431,7 @@ For financial execution agents managing wires, invoice reconciliations, and sett
 
 ## 11. Documentation Index & Citations
 
+- [System Documentation](docs/SYSTEM_DOCUMENTATION.md): Internal/external reference for all three domains, data contracts, extension playbooks, limitations and the prioritized improvement roadmap.
 - [Scanner & Dashboard Architecture](docs/SCANNER_DASHBOARD_ARCHITECTURE.md): Zero-host-execution SAST pipeline, DEC-105 invariant, OpenRouter cascade, and Streamlit dashboard design.
 - [SDE Architecture Specification](docs/SDE_ARCHITECTURE.md): The seven-tier pipeline, $\mathcal{R}_0$ anchoring, the nine sink invariants (I1–I9) plus design gate D1.
 - [Cryptographic Knowledge Graph & Cross-Stack Architecture](docs/CRYPTOGRAPHIC_GRAPH_ARCHITECTURE.md): Merkle knowledge graph, architectural ledger, cross-stack schema consensus (I8), and component harvester.
