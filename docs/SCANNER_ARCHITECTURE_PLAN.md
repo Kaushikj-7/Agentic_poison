@@ -1,8 +1,8 @@
 # Agentic OSS Vulnerability Scanner — Architecture Plan & Implementation Record
 
-**Status:** IMPLEMENTED & DELIVERED (Branch `agentpoi-scan-dashboard`).
-**Package:** `agentpoi_scan/` (Formally isolated third domain alongside `agent_poi/` and `agentpoi_sde/`).
-**Verification:** 191/191 scan domain tests passing; 1,107/1,107 total workspace CI verification tests passing.
+**Status:** Scanner prototype implemented; research-grade coverage remains incomplete.
+**Package:** `agentpoi_scan/` (third domain alongside `agent_poi/` and `agentpoi_sde/`).
+**Scope note:** Any user-supplied public GitHub repository is accepted. The two repository fixtures are test data, not an allowlist. Detection remains language/rule-limited; external scanners are optional local binaries and report skipped status when unavailable.
 
 ---
 
@@ -176,7 +176,7 @@ agentpoi_scan/
 
 ---
 
-## 6. Tiered agent design (Zone 3, LangGraph)
+## 6. Tiered agent design (Zone 3, implemented sequential agent workflow)
 
 | Agent | Model tier | Input | Tool access | Output (schema-validated JSON) |
 |---|---|---|---|---|
@@ -275,7 +275,7 @@ Views: scan progress by stage · repo risk card (two-axis) · filterable finding
 | DEC-105 | Deterministic `high`/`critical` findings cannot be silenced without verifier agreement + human flag | Injection resistance: models can annotate, never veto |
 | DEC-106 | Repo risk = weighted max over findings, two axes | One backdoor must not be diluted |
 
-**Open questions (for the operator):**
-1. Local-tier model: Ollama Qwen-coder-class vs DeepSeek-via-routing-hub (latency vs API cost)?
-2. Dashboard first: standalone Streamlit, or a new tab inside the existing `ui/app.py`?
-3. Should the scanner target list start from a fixed small set of repos, or take user-input URLs from the dashboard directly?
+**Scope decisions:**
+1. Scan target selection is user-provided GitHub URLs/slugs; never restrict scans to the validation fixtures.
+2. The delivered agent flow is a deterministic sequence (triage → policy router → analyst → verifier), not a LangGraph implementation.
+3. Formal analysis is currently a bounded explicit-state checker for selected GitHub Actions trust-boundary patterns; it is not general model checking, symbolic execution, or universal vulnerability proof.

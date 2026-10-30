@@ -670,11 +670,12 @@ class LegacyPatternScanner:
                         "text": cleaned_snippet,
                     }
                 ],
+                snippet=cleaned_snippet,
             )
+            # Interface attributes kept for tests and legacy callers.
             finding.rule_id = rule_id
             finding.file_path = rel_path
             finding.line_number = line_num
-            finding.snippet = cleaned_snippet
             finding.description = detail
             findings.append(finding)
 

@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS findings (
     payload TEXT NOT NULL,
     PRIMARY KEY (fingerprint, scan_id)
 );
+CREATE TABLE IF NOT EXISTS reports (
+    scan_id INTEGER PRIMARY KEY REFERENCES scans(id),
+    payload TEXT NOT NULL
+);
 """
 
 
@@ -64,8 +68,24 @@ class ScanStore:
         self._conn.commit()
         return scan_id
 
+    def add_report(self, scan_id: int, payload: Dict) -> None:
+        """Persists the codebase/isolation/report record shown by the dashboard."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO reports (scan_id, payload) VALUES (?, ?)",
+            (int(scan_id), json.dumps(payload)),
+        )
+        self._conn.commit()
+
     # -- reads -----------------------------------------------------------------
+    def get_report(self, scan_id: int) -> Optional[Dict]:
+        """Returns the stored report payload for a scan, or None for older scans."""
+        row = self._conn.execute(
+            "SELECT payload FROM reports WHERE scan_id = ?", (int(scan_id),)
+        ).fetchone()
+        return json.loads(row[0]) if row else None
+
     def get_scan(self, scan_id: int) -> Optional[Dict]:
+        """Returns scan metadata (repo, commit, timestamps, risk) by id."""
         row = self._conn.execute(
             "SELECT id, repo, commit_sha, created_at, risk_vulnerable, risk_malicious "
             "FROM scans WHERE id = ?",

@@ -58,6 +58,30 @@ def _parse(report):
     return parse_semgrep_json(report)
 
 
+def test_parse_osv_json_vulnerabilities():
+    from agentpoi_scan.scan.external_cmd import parse_osv_json
+
+    report = json.dumps({
+        "results": [{
+            "source": {"path": "requirements.txt"},
+            "packages": [{
+                "package": {"name": "demo", "version": "1.2.3"},
+                "vulnerabilities": [{
+                    "id": "GHSA-xxxx-yyyy-zzzz",
+                    "summary": "unsafe package version",
+                    "severity": [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H/9.8"}],
+                }],
+            }],
+        }],
+    })
+    findings = parse_osv_json(report)
+    assert len(findings) == 1
+    assert findings[0].file == "requirements.txt"
+    assert findings[0].category == "deps"
+    assert findings[0].severity == "critical"
+    assert "demo@1.2.3" in findings[0].detail
+
+
 def test_parse_gitleaks_sarif():
     report = json.dumps(
         {
@@ -116,6 +140,23 @@ class _Proc:
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = ""
+
+
+def test_osv_external_scanner_parses_json(tmp_path, monkeypatch):
+    from agentpoi_scan.scan import external_cmd
+
+    output = json.dumps({"results": [{"source": {"path": "package-lock.json"}, "packages": [{"package": {"name": "demo", "version": "0.1.0"}, "vulnerabilities": [{"id": "OSV-1"}]}]}]})
+    monkeypatch.setattr(
+        external_cmd.subprocess,
+        "run",
+        lambda *a, **k: _Proc(returncode=0, stdout=output),
+    )
+    scanner = ExternalToolScanner(external_cmd.OSV, which=lambda _binary: "/usr/bin/osv-scanner")
+    ctx = ScanContext(snapshot_dir=tmp_path, repo="r", commit_sha="sha", file_index=[])
+    result = scanner.run(ctx)
+    assert not result.skipped
+    assert len(result.findings) == 1
+    assert result.findings[0].commit_sha == "sha"
 
 
 def test_gitleaks_exit_1_with_secrets_is_success(tmp_path, monkeypatch):

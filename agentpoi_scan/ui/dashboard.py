@@ -21,16 +21,19 @@ try:
 except ImportError:
     pd = None
 
-from agentpoi_scan.findings.model import CATEGORIES, Finding
+from agentpoi_scan.findings.model import CATEGORIES, Finding, severity_rank
 from agentpoi_scan.findings.schemas import FindingFilterQuery, ScanTargetRequest
 from agentpoi_scan.report.sarif import sarif_document
 from agentpoi_scan.report.store import ScanStore
 from agentpoi_scan.ui.render import (
     format_autorun_panel,
     format_evidence_trail,
+    format_file_remediation,
     format_finding_detail,
     format_findings_for_table,
+    format_flagged_files,
     format_scan_summary,
+    format_severity_badge,
     is_autorun_finding,
 )
 
@@ -86,8 +89,13 @@ def _render_findings_matrix(findings: List[Finding]) -> None:
         format_func=lambda i: options[i],
     )
     finding = findings[selected_idx]
+    _render_finding_detail(finding)
 
-    detail_vm = format_finding_detail(finding, raw_snippet=finding.detail)
+
+def _render_finding_detail(finding: Finding) -> None:
+    """Renders one finding's location, evidence trail and vulnerable source."""
+    detail_vm = format_finding_detail(finding)
+    st.text(f"Source: {detail_vm.location}")
 
     c1, c2, c3, c4 = st.columns(4)
     c1.text(f"Scanner: {detail_vm.scanner}")
@@ -107,9 +115,165 @@ def _render_findings_matrix(findings: List[Finding]) -> None:
     if detail_vm.model_trail:
         st.text(f"Model Trail: {' -> '.join(detail_vm.model_trail)}")
 
-    st.markdown("**Quarantined Code / Payload (Escaped):**")
+    st.markdown("**Vulnerable Source at Reported Location (Escaped):**")
     # Strictly safe: st.code renders text safely without HTML/script execution
     st.code(detail_vm.escaped_snippet or "No snippet captured.", language="text")
+
+
+def _render_flagged_files(findings: List[Finding]) -> None:
+    """Renders the per-file flag table and a drill-down for one flagged file."""
+    rows = format_flagged_files(findings)
+    if not rows:
+        st.info("No files are flagged for this scan.")
+        return
+
+    st.subheader("Flagged Files")
+    st.caption(
+        f"{len(rows)} file(s) carry at least one finding. Worst severity first; "
+        "select a file to see exactly what was flagged inside it."
+    )
+    if pd is not None:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    else:
+        st.table(rows)
+
+    st.markdown("---")
+    st.subheader("Flagged File Inspector")
+    badge_by_file = {row["file"]: row["badge"] for row in rows}
+    selected_file = st.selectbox(
+        "Select a flagged file",
+        [row["file"] for row in rows],
+        format_func=lambda path: f"{badge_by_file.get(path, '')}  {path}",
+    )
+    selected_row = next(row for row in rows if row["file"] == selected_file)
+    file_findings = [f for f in findings if f.file == selected_file]
+    file_findings.sort(
+        key=lambda f: (-severity_rank(f.severity), min(f.lines) if f.lines else 0)
+    )
+    st.text(
+        f"File: {selected_file}  |  severity: {selected_row['badge']}  |  "
+        f"role: {selected_row['role']}  |  findings: {len(file_findings)}"
+    )
+
+    st.markdown("**Remediation for this file**")
+    notes = format_file_remediation(file_findings)
+    if notes:
+        for note in notes:
+            st.markdown(f"- {note}")
+    else:
+        st.text("No automated remediation guidance available for this file.")
+
+    if pd is not None:
+        st.dataframe(
+            pd.DataFrame(format_findings_for_table(file_findings)), use_container_width=True
+        )
+    else:
+        st.table(format_findings_for_table(file_findings))
+
+    options = [
+        f"{format_severity_badge(f.severity)} {f.location} — {f.title}" for f in file_findings
+    ]
+    selected_idx = st.selectbox(
+        "Select finding inside this file",
+        range(len(file_findings)),
+        format_func=lambda i: options[i],
+    )
+    _render_finding_detail(file_findings[selected_idx])
+
+
+def _render_codebase_report(report: Optional[Dict[str, Any]]) -> None:
+    """Renders the stored examination report: isolation, codebase, coverage."""
+    if not report:
+        st.info(
+            "No stored report for this scan. Reports are written by scans run with "
+            "the current pipeline; re-run the scan to generate one."
+        )
+        return
+
+    st.subheader("Examination Report")
+    isolation = report.get("isolation") or {}
+    st.text("Isolation & cleanup")
+    for key in ("mode", "network", "workspace", "purged", "removed_files", "removed_bytes"):
+        if key in isolation:
+            st.text(f"  {key}: {isolation[key]}")
+    if isolation.get("purged") == "true":
+        st.success("Ephemeral workspace deleted after examination; only the report persists.")
+    elif isolation.get("purged") == "false":
+        st.error("Workspace purge failed — source may remain on disk.")
+
+    codebase = report.get("codebase") or {}
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Files examined", str(codebase.get("total_files", 0)))
+    c2.metric("Dependencies", str(codebase.get("dependency_count", 0)))
+    c3.metric("HTTP routes", str(codebase.get("route_count", 0)))
+    c4.metric("Entrypoints", str(len(codebase.get("entrypoints") or [])))
+
+    st.markdown("**Languages**")
+    languages = codebase.get("languages") or {}
+    if languages:
+        if pd is not None:
+            st.bar_chart(pd.DataFrame(list(languages.items()), columns=["Language", "Files"]).set_index("Language"))
+        else:
+            for language, count in languages.items():
+                st.text(f"  {language}: {count}")
+    else:
+        st.text("  No recognized source languages.")
+
+    st.markdown("**Dependencies**")
+    dependencies = codebase.get("dependencies") or []
+    if dependencies:
+        rows = [
+            {
+                "name": dep.get("name", ""),
+                "specifier": dep.get("specifier", ""),
+                "ecosystem": dep.get("ecosystem", ""),
+                "source": dep.get("source", ""),
+                "pinned": bool(dep.get("pinned")),
+                "manifest": dep.get("manifest", ""),
+                "line": dep.get("line", 0),
+            }
+            for dep in dependencies[:500]
+        ]
+        if pd is not None:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        else:
+            st.table(rows)
+    else:
+        st.text("  No supported dependency manifest detected.")
+
+    st.markdown("**HTTP routes (statically extracted)**")
+    routes = codebase.get("routes") or []
+    if routes:
+        if pd is not None:
+            st.dataframe(pd.DataFrame(routes), use_container_width=True)
+        else:
+            st.table(routes)
+    else:
+        st.text("  No route declarations detected.")
+
+    st.markdown("**Entrypoints & scripts**")
+    entrypoints = codebase.get("entrypoints") or []
+    if entrypoints:
+        if pd is not None:
+            st.dataframe(pd.DataFrame(entrypoints), use_container_width=True)
+        else:
+            st.table(entrypoints)
+    scripts = codebase.get("scripts") or {}
+    for manifest, names in scripts.items():
+        st.text(f"  {manifest}: {', '.join(names)}")
+
+    skipped = report.get("skipped_scanners") or {}
+    if skipped:
+        st.markdown("**Scanners that did not run**")
+        for name, reason in sorted(skipped.items()):
+            st.text(f"  {name}: {reason}")
+
+    st.download_button(
+        label="Download examination report (JSON)",
+        data=json.dumps(report, indent=2),
+        file_name=f"scan_{report.get('scan_id', 'report')}_report.json",
+        mime="application/json",
+    )
 
 
 def _render_autorun_surface(findings: List[Finding]) -> None:
@@ -178,12 +342,12 @@ def main_app(store_path: Optional[str | Path] = None) -> None:
 
     try:
         st.title("AGENTPOI-SCAN: ZERO-EXECUTION OSS VULNERABILITY & MALICIOUS CODE AUDITOR")
-        st.caption("Isolation Boundary: In-Process (Weak) | Deterministic Zone 2 + Non-Frontier Zone 3")
+        st.caption("Enter any public GitHub repository or owner/repo. Scans are static and never execute repository code.")
 
         # Scan Trigger Section
         with st.expander("Target Repository Scanner", expanded=False):
             c1, c2, c3 = st.columns([3, 2, 1])
-            repo_url = c1.text_input("Repository (URL or owner/repo)", "https://github.com/victim/target-repo")
+            repo_url = c1.text_input("Any public GitHub repository (URL or owner/repo)", "")
             ref = c2.text_input("Branch / Commit SHA (optional)", "")
             trigger_scan = c3.button("Run Scan", type="primary")
 
@@ -207,8 +371,25 @@ def main_app(store_path: Optional[str | Path] = None) -> None:
                     pipeline = ScanPipeline(config=cfg, store_path=store_file)
                     with st.spinner("Executing Zero-Execution Static Scan..."):
                         try:
-                            pipeline.scan_target(target_req.repo_url, ref=target_req.ref)
+                            report = pipeline.scan_target(
+                                target_req.repo_url,
+                                ref=target_req.ref,
+                                workdir=store_file.parent,
+                            )
                             st.success("Scan completed successfully!")
+                            isolation = report.isolation or {}
+                            if isolation.get("purged") == "true":
+                                st.success(
+                                    "Ephemeral workspace deleted after examination "
+                                    f"({isolation.get('removed_files', 0)} files, "
+                                    f"{isolation.get('removed_bytes', 0)} bytes)."
+                                )
+                            if report.skipped_scanners:
+                                skipped = ", ".join(
+                                    f"{name}: {reason}"
+                                    for name, reason in sorted(report.skipped_scanners.items())
+                                )
+                                st.warning(f"Optional scanners did not run: {skipped}")
                         except Exception as exc:  # noqa: BLE001
                             st.error(f"Scan failed: {exc}")
                         finally:
@@ -233,6 +414,7 @@ def main_app(store_path: Optional[str | Path] = None) -> None:
 
         severity_counts = store.count_findings_by_severity(scan_id)
         all_scan_findings = store.get_findings_filtered(scan_id)
+        report = store.get_report(scan_id)
         autorun_count = len([f for f in all_scan_findings if is_autorun_finding(f)])
 
         summary = format_scan_summary(scan_meta, severity_counts, autorun_count=autorun_count)
@@ -268,16 +450,27 @@ def main_app(store_path: Optional[str | Path] = None) -> None:
             search=filter_query.search_query,
         )
 
-        t1, t2, t3, t4 = st.tabs(
-            ["Findings Matrix", "Autorun Surface", "Category Breakdown", "SARIF Export"]
+        t1, t2, t3, t4, t5, t6 = st.tabs(
+            [
+                "Flagged Files",
+                "Examination Report",
+                "Findings Matrix",
+                "Autorun Surface",
+                "Category Breakdown",
+                "SARIF Export",
+            ]
         )
         with t1:
-            _render_findings_matrix(filtered_findings)
+            _render_flagged_files(all_scan_findings)
         with t2:
-            _render_autorun_surface(all_scan_findings)
+            _render_codebase_report(report)
         with t3:
-            _render_category_distribution(all_scan_findings)
+            _render_findings_matrix(filtered_findings)
         with t4:
+            _render_autorun_surface(all_scan_findings)
+        with t5:
+            _render_category_distribution(all_scan_findings)
+        with t6:
             _render_sarif_export(scan_id, all_scan_findings)
     finally:
         store.close()

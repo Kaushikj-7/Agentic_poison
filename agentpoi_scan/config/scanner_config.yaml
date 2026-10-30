@@ -4,6 +4,8 @@ scanners:
   - repo_injection
   - autorun_surface
   - legacy_patterns
+  - taint_flow
+  - dependency_hygiene
   - semgrep
   - gitleaks
   - osv

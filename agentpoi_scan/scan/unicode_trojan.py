@@ -45,7 +45,8 @@ class UnicodeTrojanScanner:
             if not text:
                 continue
             hits: list[tuple[int, str]] = []
-            for lineno, line in enumerate(text.splitlines(), start=1):
+            source_lines = text.splitlines()
+            for lineno, line in enumerate(source_lines, start=1):
                 kinds: list[str] = []
                 for ch in line:
                     kind = _classify_char(ch)
@@ -63,6 +64,11 @@ class UnicodeTrojanScanner:
                     Finding(
                         file=relpath,
                         lines=[line for line, _ in hits[:10]],
+                        snippet=(
+                            source_lines[first_line - 1].strip()[:300]
+                            if 0 < first_line <= len(source_lines)
+                            else ""
+                        ),
                         category="unicode_trojan",
                         severity="high",
                         title=f"hidden unicode characters ({first_kinds})",

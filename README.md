@@ -9,7 +9,7 @@
 [![Cascade: OpenRouter Free](https://img.shields.io/badge/Cascade-OpenRouter%20%3Afree-blueviolet.svg)]()
 [![Format: OASIS SARIF 2.1.0](https://img.shields.io/badge/Output-SARIF%202.1.0-orange.svg)]()
 
-> **AgentPOI-Scan** is an industry-grade, zero-host-execution static security analysis framework engineered to audit untrusted open-source repositories and complex agentic snapshots (Langflow, Python, legacy PHP) for supply-chain backdoors, autorun execution hooks, and high-impact vulnerabilities—**without compiling, running, or installing target packages**.
+> **AgentPOI-Scan** accepts any public GitHub repository supplied by the user (or a local directory); it is not tied to Langflow, PHP, or a fixed repo list. It performs zero-host-execution static analysis with OSS scanner adapters and read-only agentic triage. Langflow and legacy PHP are validation fixtures—not scan-target restrictions—and the current formal state checker focuses specifically on GitHub Actions trust-boundary reachability.
 
 ---
 
@@ -28,13 +28,14 @@
 - [5. Supported Detection Rules Matrix (with CWE Mappings)](#5-supported-detection-rules-matrix-with-cwe-mappings)
 - [6. Advisory Multi-Tier LLM Bridge & Epistemic DEC-105 Invariant](#6-advisory-multi-tier-llm-bridge--epistemic-dec-105-invariant)
 - [7. Non-Diluting Two-Axis Risk Scoring (DEC-106)](#7-non-diluting-two-axis-risk-scoring-dec-106)
-- [8. Verification & Deterministic Standards](#8-verification--deterministic-standards)
-- [9. Appendix: Sibling Framework Domains](#9-appendix-sibling-framework-domains)
-  - [9.1 Coding Agent Defense (`agentpoi_sde` / `DevGuard`)](#91-coding-agent-defense-agentpoi_sde--devguard)
-  - [9.2 The Nine Sink Invariants (I1–I9) + Design Gate D1](#92-the-nine-sink-invariants-i1i9--design-gate-d1)
-  - [9.3 Empirical SDE Benchmark Evaluation](#93-empirical-sde-benchmark-evaluation)
-  - [9.4 Financial Agent Defense (`agent_poi` / `FinancialGuard`)](#94-financial-agent-defense-agent_poi--financialguard)
-- [10. Documentation Index & Citations](#10-documentation-index--citations)
+- [8. Formal Analysis Scope: Explicit-State Reachability](#8-formal-analysis-scope-explicit-state-reachability)
+- [9. Verification & Deterministic Standards](#9-verification--deterministic-standards)
+- [10. Appendix: Sibling Framework Domains](#10-appendix-sibling-framework-domains)
+  - [10.1 Coding Agent Defense (`agentpoi_sde` / `DevGuard`)](#101-coding-agent-defense-agentpoi_sde--devguard)
+  - [10.2 The Nine Sink Invariants (I1–I9) + Design Gate D1](#102-the-nine-sink-invariants-i1i9--design-gate-d1)
+  - [10.3 Empirical SDE Benchmark Evaluation](#103-empirical-sde-benchmark-evaluation)
+  - [10.4 Financial Agent Defense (`agent_poi` / `FinancialGuard`)](#104-financial-agent-defense-agent_poi--financialguard)
+- [11. Documentation Index & Citations](#11-documentation-index--citations)
 - [License](#license)
 
 ---
@@ -126,6 +127,8 @@ pip install -e ".[dev,scan-ui]"
 
 ### 3.2 CLI Scans (`agentpoi-scan run`)
 
+Both CLI and dashboard accept arbitrary public GitHub repositories; provide a URL or `owner/repo` slug. There is no built-in two-repository allowlist.
+
 The `agentpoi-scan` CLI executes static scans on local directories, pinned snapshot archives, or remote GitHub repositories:
 
 ```bash
@@ -144,6 +147,13 @@ agentpoi-scan run tests/fixtures/legacy_php_repo \
   --output-sarif legacy_scan.sarif \
   --workdir .agentpoi_scan
 ```
+
+Every remote scan resolves one commit, downloads the tarball through the GitHub API, and
+extracts it into a fresh ephemeral workspace under `--workdir` (default
+`.agentpoi_scan/ws_*`). The scanners and the codebase-intelligence layer read it in place;
+when the scan ends the workspace — tarball, extracted source and scratch files — is deleted
+and the purge is recorded in the report (`removed_files`, `removed_bytes`). Local-directory
+scans are read-only and never deleted.
 
 ### 3.3 Interactive Dashboard Launch
 
@@ -187,14 +197,16 @@ for item in high_risks:
 
 The `agentpoi-scan` dashboard (`agentpoi_scan/ui/dashboard.py`) delivers an interactive security workstation built for vulnerability auditors and red teams.
 
-### 4.1 Four-Tab Interface
+### 4.1 Six-Tab Interface
 
 | Tab | Name | Capabilities & Purpose |
 | :--- | :--- | :--- |
-| **Tab 1** | **Findings Matrix & Evidence Trail** | Filterable by Severity (`Critical`, `High`, `Medium`, `Low`), Category (`sast`, `malware`, `autorun`, `injection`), and free-text search. Includes expandable finding cards displaying line numbers, confidence scores, multi-tier LLM model trails, and quarantined code payloads. |
-| **Tab 2** | **Autorun Surface** | Dedicated triage panel for hidden execution vectors: CI/CD workflows (`pull_request_target`), `package.json` install scripts (`preinstall`/`postinstall`), VS Code tasks (`folderOpen`), and build hooks (`setup.py`). |
-| **Tab 3** | **Category Breakdown & Risk Metrics** | Visual metrics showing the Two-Axis Scorecard (`Vulnerability Risk`, `Maliciousness Risk`, `Total Findings`, `Autorun Hooks`) alongside categorical distribution bar charts. |
-| **Tab 4** | **SARIF 2.1.0 Export** | Live generation and one-click download of OASIS SARIF 2.1.0 compliant JSON reports formatted for native GitHub Advanced Security ingestion and enterprise SIEM pipelines. |
+| **Tab 1** | **Flagged Files** | One row per file that carries at least one finding, ordered by worst severity and finding count, with a plain-text severity badge (🔴 CRITICAL / 🟠 HIGH / 🟡 MEDIUM / 🔵 LOW), the file's role, per-severity counts, scanners and the top remediation note. Selecting a file opens its full remediation list, findings and exact vulnerable source line. |
+| **Tab 2** | **Examination Report** | What was examined and what was removed: isolation mode, purge status/bytes, languages, dependency inventory (name, range, ecosystem, pinned, manifest), statically extracted HTTP routes, entrypoints/scripts, skipped optional scanners, plus a downloadable JSON report. |
+| **Tab 3** | **Findings Matrix & Evidence Trail** | Filterable by Severity (`Critical`, `High`, `Medium`, `Low`), Category (`sast`, `malware`, `autorun`, `injection`), and free-text search. Includes expandable finding cards displaying line numbers, confidence scores, multi-tier LLM model trails, and quarantined code payloads. |
+| **Tab 4** | **Autorun Surface** | Dedicated triage panel for hidden execution vectors: CI/CD workflows (`pull_request_target`), `package.json` install scripts (`preinstall`/`postinstall`), VS Code tasks (`folderOpen`), and build hooks (`setup.py`). |
+| **Tab 5** | **Category Breakdown & Risk Metrics** | Visual metrics showing the Two-Axis Scorecard (`Vulnerability Risk`, `Maliciousness Risk`, `Total Findings`, `Autorun Hooks`) alongside categorical distribution bar charts. |
+| **Tab 6** | **SARIF 2.1.0 Export** | Live generation and one-click download of OASIS SARIF 2.1.0 compliant JSON reports formatted for native GitHub Advanced Security ingestion and enterprise SIEM pipelines. |
 
 ### 4.2 Stored XSS Defense (`html.escape`)
 
@@ -218,11 +230,14 @@ AgentPOI-Scan provides comprehensive coverage across legacy enterprise stacks (P
 | `legacy.php.deserialization` | Vulnerability | **High** | **CWE-502** | Invocation of `unserialize()` without explicit `['allowed_classes' => false]`. | PHP Object Injection / POP Gadget Chains |
 | `legacy.php.obfuscated_eval` | Malicious Code | **Critical** | **CWE-94 / CWE-95** | Obfuscated dynamic execution: `eval(base64_decode())`, `create_function()`, `preg_replace /e`, and dynamic superglobal dispatch. | Stealth Webshells & Backdoors |
 | `agentic.python.deserialization` | Vulnerability | **Critical** | **CWE-502** | Unsafe deserialization calls: `pickle.loads()`, `shelve.open()`, `yaml.unsafe_load()`, and `torch.load()` lacking `weights_only=True`. | Python Deserialization RCE |
-| `agentic.autorun.workflow` | Malicious Code | **High** | **CWE-829** | GitHub Actions `pull_request_target` triggers combined with untrusted PR checkout. | Pipeline Hijacking / Secret Token Egress |
+| `agentic.autorun.workflow` | Malicious Code | **High** | **CWE-829** | GitHub Actions autorun and unsafe `pull_request_target` surfaces. | Pipeline Hijacking / Secret Token Egress |
+| `agentic.workflow.state_reachability` | CI/IaC | **High** | **CWE-829** | Bounded explicit-state reachability for PR-controlled shell interpolation or PR-head checkout followed by common build/test commands in privileged workflows. | Privileged Workflow Boundary Violation |
 | `agentic.autorun.package` | Malicious Code | **Critical** | **CWE-829 / CWE-78** | `package.json` `preinstall` or `postinstall` lifecycle scripts piping `curl`/`wget` directly to `sh`/`bash`. | Supply-Chain Host Infection on Install |
 | `agentic.autorun.task` | Malicious Code | **Medium** | **CWE-829** | `.vscode/tasks.json` configured with `runOn: folderOpen`. | IDE Auto-Execution on Repository Open |
 | `agentic.prompt_injection` | Malicious Code | **High** | **CWE-77 / MITRE AML.T0054** | Imperative adversarial directives (`IGNORE PREVIOUS INSTRUCTIONS`, exfiltration markers) in prompts or code comments. | Downstream Autonomous Agent Goal Hijacking |
 | `agentic.unicode.trojan` | Malicious Code | **High** | **CWE-1036** | Bidirectional (Bidi) overrides and zero-width unicode characters disguising malicious tokens or splitting keywords. | Invisible Trojan Source Attacks |
+| `taint.request_to_sink` | Vulnerability | **Critical / High** | **CWE-78 / CWE-95 / CWE-89** | Intra-procedural taint flow: `request.*`, `input()`, `sys.argv` or `os.environ` reaching `eval`/`exec`, `os.system`, `subprocess`, `pickle.loads`, `yaml.load` or a SQL `.execute()` (Python AST; JS/TS request-to-shell/eval/SQL). | Reachable Command/Eval/SQL Injection |
+| `dep.hygiene.remote_or_unpinned` | Vulnerability | **High / Medium / Low** | **CWE-829** | Dependencies resolved from remote VCS or local paths, floating PyPI/npm ranges, and manifests without a lockfile. | Unreviewed Supply-Chain Code Drift |
 
 ---
 
@@ -268,7 +283,15 @@ $$\text{Maliciousness Risk} = \max_{f \in \mathcal{F}_{\text{malware}}} f.\text{
 
 ---
 
-## 8. Verification & Deterministic Standards
+## 8. Formal Analysis Scope: Explicit-State Reachability
+
+A workflow is abstracted into states $s=(p,v,c,t,x)$, where $p$ is the `pull_request_target` trigger, $v$ a privileged execution context, $c$ checkout of an attacker-controlled PR revision, $t$ interpolation of PR-controlled data into a shell command, and $x$ execution of checked-out code by a common build/test command. The checker constructs ordered transitions per job, then uses breadth-first search to decide whether
+
+$$\exists s\in Reach(s_0): (v\land t)\lor(v\land c\land x).$$
+
+It reports the shortest transition witness as finding evidence. The Boolean abstraction has at most $2^5=32$ states, and reachability is $O(|S|+|E|)$ in the abstract graph. This is a bounded, conservative analysis of recognized YAML patterns—not general workflow semantics, symbolic execution, or a proof that a repository is safe. It is deliberately research-oriented alongside deterministic SAST and optional OSS scanner integrations; dashboards are only a way to inspect results. Semgrep, Gitleaks, and OSV-Scanner run only when installed locally. Missing or failed tools are reported as skipped, not successful coverage.
+
+## 9. Verification & Deterministic Standards
 
 AgentPOI-Scan is rigorously validated against ground-truth fixtures and offline CPU suites:
 
@@ -288,7 +311,7 @@ ruff check .
 
 ---
 
-## 9. Appendix: Sibling Framework Domains
+## 10. Appendix: Sibling Framework Domains
 
 AgentPOI provides deterministic, fail-closed invariant defense across three formally isolated application domains:
 1. **Zero-Host-Execution Vulnerability Scanner (`agentpoi_scan`)**: Presented above.
@@ -297,7 +320,7 @@ AgentPOI provides deterministic, fail-closed invariant defense across three form
 
 ---
 
-### 9.1 Coding Agent Defense (`agentpoi_sde` / `DevGuard`)
+### 10.1 Coding Agent Defense (`agentpoi_sde` / `DevGuard`)
 
 AgentPOI-SDE treats the code mutation sink (file edit, write, commit) as a fail-closed checkpoint gated against repository ground truth $\mathcal{R}_0$:
 
@@ -354,7 +377,7 @@ print(verdict.violation_codes)  # ['I5', 'I1']
 
 ---
 
-### 9.2 The Nine Sink Invariants (I1–I9) + Design Gate D1
+### 10.2 The Nine Sink Invariants (I1–I9) + Design Gate D1
 
 | Invariant | Rule | Attack class it closes |
 | :--- | :--- | :--- |
@@ -371,7 +394,7 @@ print(verdict.violation_codes)  # ['I5', 'I1']
 
 ---
 
-### 9.3 Empirical SDE Benchmark Evaluation
+### 10.3 Empirical SDE Benchmark Evaluation
 
 <!-- BEGIN SDE_BENCHMARK (generated by scripts/render_sde_metrics.py from a live benchmark run; do not edit by hand) -->
 
@@ -398,7 +421,7 @@ _Generated from a live execution of the 40-scenario suite: 34 adversarial mutati
 
 ---
 
-### 9.4 Financial Agent Defense (`agent_poi` / `FinancialGuard`)
+### 10.4 Financial Agent Defense (`agent_poi` / `FinancialGuard`)
 
 For financial execution agents managing wires, invoice reconciliations, and settlements, `agent_poi` provides **Contextual Invariant Verification (CIV)** and **Dual-State Epistemic Consensus (DSEC)**:
 - **Wire Disbursement Safeguards**: Guarantees payment limits, account whitelists, and velocity constraints cannot be overridden by conversational prompt injections.
@@ -406,7 +429,7 @@ For financial execution agents managing wires, invoice reconciliations, and sett
 
 ---
 
-## 10. Documentation Index & Citations
+## 11. Documentation Index & Citations
 
 - [Scanner & Dashboard Architecture](docs/SCANNER_DASHBOARD_ARCHITECTURE.md): Zero-host-execution SAST pipeline, DEC-105 invariant, OpenRouter cascade, and Streamlit dashboard design.
 - [SDE Architecture Specification](docs/SDE_ARCHITECTURE.md): The seven-tier pipeline, $\mathcal{R}_0$ anchoring, the nine sink invariants (I1–I9) plus design gate D1.

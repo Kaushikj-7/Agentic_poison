@@ -7,6 +7,7 @@ from agentpoi_scan.scan.autorun_surface import AutorunSurfaceScanner
 from agentpoi_scan.scan.base import ScanContext
 from agentpoi_scan.scan.prompt_injection import PromptInjectionScanner
 from agentpoi_scan.scan.unicode_trojan import UnicodeTrojanScanner
+from agentpoi_scan.scan.workflow_state import WorkflowStateChecker
 
 
 def _ctx(tmp_path: Path, files: dict) -> ScanContext:
@@ -100,3 +101,84 @@ def test_reader_directory_flagged(tmp_path):
     ctx = _ctx(tmp_path, {".husky/pre-commit": "npm test\n"})
     findings = AutorunSurfaceScanner().run(ctx).findings
     assert findings and findings[0].category == "autorun"
+
+
+def test_workflow_state_checker_finds_reachable_tainted_shell(tmp_path):
+    workflow = """name: unsafe
+on: pull_request_target
+jobs:
+  inspect:
+    steps:
+      - run: echo ${{ github.event.pull_request.title }}
+"""
+    ctx = _ctx(tmp_path, {".github/workflows/unsafe.yml": workflow})
+    findings = WorkflowStateChecker().run(ctx).findings
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.category == "ci_iac"
+    assert finding.severity == "high"
+    assert "reachable" in finding.title
+    assert len(finding.evidence) == 2
+    assert all(item["kind"] == "state_transition" for item in finding.evidence)
+
+
+def test_workflow_state_checker_requires_reachable_danger(tmp_path):
+    safe = """name: safe
+on: pull_request_target
+jobs:
+  inspect:
+    steps:
+      - run: echo safe
+"""
+    ctx = _ctx(tmp_path, {".github/workflows/safe.yml": safe})
+    assert WorkflowStateChecker().run(ctx).findings == []
+
+
+def test_workflow_state_checker_does_not_join_unreachable_out_of_order_steps(tmp_path):
+    workflow = """name: safe-order
+on: pull_request_target
+jobs:
+  inspect:
+    steps:
+      - run: npm test
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+"""
+    ctx = _ctx(tmp_path, {".github/workflows/safe-order.yml": workflow})
+    assert WorkflowStateChecker().run(ctx).findings == []
+
+
+def test_workflow_state_checker_does_not_join_states_across_jobs(tmp_path):
+    workflow = """name: separate-jobs
+on: pull_request_target
+jobs:
+  checkout:
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+  test:
+    steps:
+      - run: npm test
+"""
+    ctx = _ctx(tmp_path, {".github/workflows/separate.yml": workflow})
+    assert WorkflowStateChecker().run(ctx).findings == []
+
+
+def test_workflow_state_checker_finds_pr_checkout_then_execution(tmp_path):
+    workflow = """name: unsafe
+on: pull_request_target
+jobs:
+  inspect:
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: npm test
+"""
+    ctx = _ctx(tmp_path, {".github/workflows/unsafe.yml": workflow})
+    findings = WorkflowStateChecker().run(ctx).findings
+    assert findings
+    assert "checked-out code" in findings[0].detail
+    assert len(findings[0].evidence) == 3

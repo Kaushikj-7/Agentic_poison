@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary & Problem Formulation
 
-**AgentPOI-Scan** is a production-grade, zero-host-execution security analysis platform engineered to audit untrusted open-source and agentic software repositories for supply-chain backdoors, hidden autorun execution vectors, and software vulnerabilities.
+**AgentPOI-Scan** accepts any public GitHub repository supplied by the user (or a local directory); it has no fixed-repository allowlist. Its current static rules cover selected languages and security surfaces, so repository acceptance is general but detection coverage is not universal. Langflow and legacy PHP are test fixtures, not target restrictions. A finite-state checker currently models selected GitHub Actions `pull_request_target` trust-boundary paths; this is a bounded abstraction, not general-purpose model checking.
 
 ### 1.1 Inverting the Anthropic `oss-scanner` Paradigm
 Anthropic's `oss-scanner` relies on an active virtual machine (VM) sandbox that builds packages, resolves dependencies, and executes install hooks before inspecting the resulting image. While suitable for controlled hypervisors, this approach introduces severe risk when inspecting hostile repositories: running `setup.py`, `package.json` `postinstall` hooks, or build scripts on a developer host allows arbitrary code execution.

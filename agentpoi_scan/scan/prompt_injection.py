@@ -37,6 +37,7 @@ class PromptInjectionScanner:
             normalized = unicodedata.normalize("NFKC", raw)
             cleaned = _INVISIBLE_RE.sub("", normalized).lower()
             lines = cleaned.splitlines()
+            raw_lines = raw.splitlines()
             for marker in INJECTION_MARKERS:
                 for lineno, line in enumerate(lines, start=1):
                     if marker in line:
@@ -44,6 +45,11 @@ class PromptInjectionScanner:
                             Finding(
                                 file=relpath,
                                 lines=[lineno],
+                                snippet=(
+                                    raw_lines[lineno - 1].strip()[:300]
+                                    if 0 < lineno <= len(raw_lines)
+                                    else ""
+                                ),
                                 category="injection",
                                 severity="medium",
                                 title=f"prompt injection marker: {marker!r}",

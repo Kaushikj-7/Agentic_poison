@@ -36,12 +36,20 @@ class PythonSastScanner:
             result = self._validator.validate(code)
             if result.is_safe:
                 continue
+            source_lines = code.splitlines()
             for violation in result.violations:
                 severity, malicious, vuln = self._classify(violation)
+                line_no = self._locate_line(code, violation)
+                snippet = (
+                    source_lines[line_no - 1].strip()[:300]
+                    if 0 < line_no <= len(source_lines)
+                    else ""
+                )
                 findings.append(
                     Finding(
                         file=relpath,
-                        lines=[self._locate_line(code, violation)],
+                        lines=[line_no],
+                        snippet=snippet,
                         category=self._category(violation),
                         severity=severity,
                         title=self._title(violation),

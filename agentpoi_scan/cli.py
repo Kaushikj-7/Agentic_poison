@@ -89,11 +89,11 @@ def main(argv: list[str] | None = None) -> int:
             cfg["privacy"]["local_only"] = True
         if args.sarif:
             cfg["sarif_path"] = args.sarif
+        token = os.environ.get("GITHUB_TOKEN") or cfg.get("github_token")
+        if token:
+            cfg["github_token"] = token
         pipeline = ScanPipeline(config=cfg, store_path=Path(args.workdir or ".agentpoi_scan") / "scan_store.sqlite3")
         try:
-            token = os.environ.get("GITHUB_TOKEN") or cfg.get("github_token")
-            if token:
-                cfg["github_token"] = token
             report = pipeline.scan_target(args.repo, ref=args.branch, workdir=Path(args.workdir or ".agentpoi_scan"))
         except Exception as exc:  # noqa: BLE001 — CLI boundary: report and fail closed
             print(f"SCAN: FAIL ({exc})")
@@ -101,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         print("SCAN: COMPLETE")
         print(report.summary())
         print(f"sarif: {pipeline.sarif_path}")
+        print(f"dashboard report: scan #{report.scan_id} in {pipeline.store.path}")
         return 0
 
     sys.exit(1)  # pragma: no cover — argparse enforces subcommand

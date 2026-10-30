@@ -15,6 +15,8 @@ def _result(finding: Finding) -> Dict[str, Any]:
     region: Dict[str, Any] = {}
     if finding.lines:
         region = {"startLine": min(finding.lines), "endLine": max(finding.lines)}
+    if finding.snippet:
+        region["snippet"] = {"text": finding.snippet}
     return {
         "ruleId": f"{finding.scanner}/{finding.title}",
         "level": _LEVEL.get(finding.severity, "note"),

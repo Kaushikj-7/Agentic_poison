@@ -73,6 +73,7 @@ class FindingDetailViewModel(BaseModel):
 
     fingerprint: str
     file: str
+    location: str = Field(..., description="Source location as file:line")
     lines: List[int]
     category: str
     severity: str

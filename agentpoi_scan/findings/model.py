@@ -64,6 +64,9 @@ class Finding:
     status: str = "open"
     evidence: List[Dict[str, Any]] = field(default_factory=list)
     model_trail: List[str] = field(default_factory=list)
+    # Exact vulnerable source text (trimmed), persisted so the dashboard and
+    # reports can show WHERE the problem lives, not just a description.
+    snippet: str = ""
 
     def __post_init__(self) -> None:
         if self.category not in CATEGORIES:
@@ -80,6 +83,13 @@ class Finding:
         raw = f"{self.scanner}|{self.title}|{self.file}|{line_start}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
+    @property
+    def location(self) -> str:
+        """Human-readable source location, e.g. ``app/server.py:42``."""
+        if self.lines:
+            return f"{self.file}:{min(self.lines)}"
+        return self.file
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "fingerprint": self.fingerprint,
@@ -92,6 +102,7 @@ class Finding:
             "severity": self.severity,
             "title": self.title,
             "detail": self.detail,
+            "snippet": self.snippet,
             "confidence": self.confidence,
             "maliciousness": self.maliciousness,
             "vulnerability": self.vulnerability,
@@ -111,6 +122,7 @@ class Finding:
             severity=data["severity"],
             title=data["title"],
             detail=data.get("detail", ""),
+            snippet=data.get("snippet", ""),
             scanner=data.get("scanner", "unknown"),
             commit_sha=data.get("commit_sha", ""),
             source=data.get("source", SOURCE_SCANNER),
@@ -147,5 +159,7 @@ def dedupe(findings: List[Finding]) -> List[Finding]:
         else:
             merged, other = current, finding
         merged.evidence.extend(other.evidence)
+        if not merged.snippet:
+            merged.snippet = other.snippet
         best[key] = merged
     return list(best.values())

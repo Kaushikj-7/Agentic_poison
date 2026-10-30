@@ -10,6 +10,7 @@ nothing from the target repository is executed by us.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from typing import Callable, List, Optional
@@ -72,6 +73,7 @@ def parse_semgrep_json(report: str) -> List[Finding]:
                 scanner="semgrep",
                 confidence=0.85,
                 vulnerability=0.7,
+                snippet=str(extra.get("lines") or "")[:300],
                 evidence=[{"kind": "scanner_output", "text": str(extra.get("message", ""))[:400]}],
             )
         )
@@ -87,7 +89,15 @@ def parse_gitleaks_sarif(report: str) -> List[Finding]:
             rule_id = result.get("ruleId", "secret")
             loc = ((result.get("locations") or [{}])[0].get("physicalLocation") or {})
             uri = (loc.get("artifactLocation") or {}).get("uri", "unknown")
-            start = ((loc.get("region") or {}).get("startLine")) or 1
+            region = loc.get("region") or {}
+            start = region.get("startLine") or 1
+            embedded = region.get("snippet")
+            if isinstance(embedded, dict):
+                snippet = str(embedded.get("text") or "")[:300]
+            elif isinstance(embedded, str):
+                snippet = embedded[:300]
+            else:
+                snippet = ""
             findings.append(
                 Finding(
                     file=uri,
@@ -100,6 +110,7 @@ def parse_gitleaks_sarif(report: str) -> List[Finding]:
                     confidence=0.95,
                     maliciousness=0.2,
                     vulnerability=0.5,
+                    snippet=snippet,
                     evidence=[{"kind": "scanner_output", "text": uri}],
                 )
             )
@@ -141,7 +152,10 @@ class ExternalToolScanner:
         parser = {
             "semgrep": parse_semgrep_json,
             "gitleaks": parse_gitleaks_sarif,
-        }.get(self.spec.name, parse_nothing)
+            "osv": parse_osv_json,
+        }.get(self.spec.name)
+        if parser is None:
+            return SkipOrErr(self.name, "no report parser registered for external scanner")
         try:
             findings = parser(proc.stdout or "{}")
         except (ValueError, KeyError) as exc:
@@ -157,5 +171,44 @@ def SkipOrErr(scanner: str, reason: str) -> ScanResult:
 
 
 def parse_nothing(_report: str) -> List[Finding]:
-    """Parse stub for tools whose format we do not model yet (e.g. OSV JSON)."""
+    """Parse placeholder retained for unknown optional scanner adapters."""
     return []
+
+
+def parse_osv_json(report: str) -> List[Finding]:
+    """Maps OSV-Scanner JSON package vulnerabilities to canonical findings."""
+    data = json.loads(report) or {}
+    findings: List[Finding] = []
+    for result in data.get("results", []) or []:
+        source = result.get("source") or {}
+        source_path = str(source.get("path") or "dependency manifest")
+        for package_entry in result.get("packages", []) or []:
+            package = package_entry.get("package") or {}
+            package_name = str(package.get("name") or "unknown package")
+            version = str(package.get("version") or "unknown version")
+            for vulnerability in package_entry.get("vulnerabilities", []) or []:
+                vuln_id = str(vulnerability.get("id") or "OSV vulnerability")
+                details = str(vulnerability.get("summary") or vulnerability.get("details") or "")
+                severity = "high"
+                for severity_entry in vulnerability.get("severity", []) or []:
+                    score = str(severity_entry.get("score") or "")
+                    match = re.search(r"(?:^|/)([0-9]+(?:\.[0-9]+)?)", score)
+                    if match:
+                        cvss = float(match.group(1))
+                        severity = "critical" if cvss >= 9.0 else "high" if cvss >= 7.0 else "medium" if cvss >= 4.0 else "low"
+                        break
+                findings.append(
+                    Finding(
+                        file=source_path,
+                        lines=[],
+                        category="deps",
+                        severity=severity,
+                        title=f"vulnerable dependency: {package_name} ({vuln_id})",
+                        detail=f"{package_name}@{version}: {details}"[:400],
+                        scanner="osv",
+                        confidence=0.95,
+                        vulnerability=0.9,
+                        evidence=[{"kind": "scanner_output", "text": f"{vuln_id}: {package_name}@{version}"}],
+                    )
+                )
+    return findings

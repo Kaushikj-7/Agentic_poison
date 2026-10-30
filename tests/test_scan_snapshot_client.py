@@ -23,9 +23,11 @@ class _FakeSession:
     def __init__(self, routes):
         self.routes = routes
         self.calls = []
+        self.request_headers = []
 
-    def get(self, url, timeout=30.0, allow_redirects=True):
+    def get(self, url, timeout=30.0, allow_redirects=True, headers=None):
         self.calls.append(url)
+        self.request_headers.append(headers or {})
         return self.routes.get(url, _Response(status_code=404))
 
 
@@ -49,6 +51,15 @@ def test_resolve_commit_pins_a_sha():
     )
     client = SnapshotClient(session=session)
     assert client.resolve_commit("owner/repo", ref="main") == "abc123"
+
+
+def test_github_token_is_sent_on_api_requests():
+    session = _FakeSession({
+        "https://api.github.com/repos/owner/repo/commits/HEAD": _Response(json_data={"sha": "abc123"}),
+    })
+    SnapshotClient(session=session, token="test-token").resolve_commit("owner/repo")
+    assert session.request_headers[0]["Authorization"] == "Bearer test-token"
+    assert session.request_headers[0]["Accept"] == "application/vnd.github+json"
 
 
 def test_fetch_downloads_tarball_for_pinned_sha(tmp_path):

@@ -19,7 +19,13 @@ DEFAULT_API = "https://api.github.com"
 class HttpSession(Protocol):
     """Minimal requests-like session surface (for injection in tests)."""
 
-    def get(self, url: str, timeout: float = 30.0, allow_redirects: bool = True):  # noqa: D102
+    def get(
+        self,
+        url: str,
+        timeout: float = 30.0,
+        allow_redirects: bool = True,
+        headers: dict | None = None,
+    ):  # noqa: D102
         ...
 
 
@@ -83,7 +89,12 @@ class SnapshotClient:
         return headers
 
     def _get(self, url: str, accept: str):
-        response = self.session.get(url, timeout=60.0, allow_redirects=True)
+        response = self.session.get(
+            url,
+            timeout=60.0,
+            allow_redirects=True,
+            headers=self._headers(accept),
+        )
         if response.status_code == 401:
             raise SnapshotError("authentication failed (bad or expired token)")
         if response.status_code == 404:

@@ -199,3 +199,41 @@ def test_is_autorun_finding_detection():
     assert is_autorun_finding(f_circleci) is True
     assert is_autorun_finding(f_setup) is True
     assert is_autorun_finding(f_plain) is False
+
+
+def test_finding_snippet_persists_through_dict_roundtrip():
+    finding = _sample_finding(snippet="os.system(base64.b64decode(payload))")
+    data = finding.to_dict()
+    assert data["snippet"] == "os.system(base64.b64decode(payload))"
+
+    restored = Finding.from_dict(data)
+    assert restored.snippet == finding.snippet
+    assert restored.location == "setup.py:42"
+
+
+def test_findings_table_exposes_source_location():
+    finding = _sample_finding(snippet="os.system('id')")
+    row = format_findings_for_table([finding])[0]
+    assert row["location"] == "setup.py:42"
+    assert row["file"] == "setup.py"
+
+
+def test_finding_detail_prefers_source_snippet_over_description():
+    finding = _sample_finding(detail="human readable description", snippet="eval(input())")
+    detail_model = format_finding_detail(finding)
+    assert detail_model.location == "setup.py:42"
+    assert detail_model.escaped_snippet == "eval(input())"
+
+
+def test_snippet_survives_scan_store_roundtrip(tmp_path):
+    from agentpoi_scan.report.store import ScanStore
+
+    store = ScanStore(tmp_path / "scan_store.sqlite3")
+    try:
+        scan_id = store.add_scan("owner/repo", "c0ffee", [_sample_finding(snippet="danger()")])
+        loaded = store.get_findings_filtered(scan_id)
+        assert len(loaded) == 1
+        assert loaded[0].snippet == "danger()"
+        assert loaded[0].location == "setup.py:42"
+    finally:
+        store.close()
