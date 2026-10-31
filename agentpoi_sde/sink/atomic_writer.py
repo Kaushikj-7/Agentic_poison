@@ -58,7 +58,10 @@ class AtomicDiskWriter:
         ) as tmp:
             tmp.write(content)
             tmp.flush()
-            os.fsync(tmp.fileno())
+            try:
+                os.fsync(tmp.fileno())
+            except OSError:
+                pass
             tmp_name = tmp.name
 
         try:

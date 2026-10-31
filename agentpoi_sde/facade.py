@@ -299,7 +299,11 @@ class DevGuard:
         provenance_ok, provenance_msgs = self.provenance.verify_mutation_authority(mutation_node.node_id)
         provenance_violations = [self._split_provenance(msg) for msg in provenance_msgs]
         capability_violations = self.capability.validate(delta) if self.capability else []
-        invariant_violations = list(self.verifier.verify(intent, delta, capability=self.capability))
+        invariant_violations = list(
+            self.verifier.verify(
+                intent, delta, capability=self.capability, workspace=self.workspace
+            )
+        )
         if self.verifier._on("enforce_policy_files"):
             injection_hits = self.screen_mutation_content(delta.new_content)
             if injection_hits:
@@ -588,7 +592,7 @@ class DevGuard:
             raise SyntaxIntegrityError(verdict.mutation_path, details)
         if codes & {"P1", "P2", "P3", "P4"}:
             raise UntrustedProvenanceError(verdict.mutation_path, details)
-        if "K1" in codes or "K2" in codes or "K3" in codes:
+        if codes & {"K1", "K2", "K3", "K4"}:
             raise CapabilityScopeError("; ".join(verdict.violations), details)
         if "F" in codes:
             raise ReplayDetectedError(verdict.mutation_path, details)

@@ -55,12 +55,12 @@ def ruff_command() -> list[str]:
     """Resolve ruff from PATH, the venv, or the current interpreter."""
     exe = shutil.which("ruff")
     if exe:
-        return [exe, "check", "."]
+        return [exe, "check", ".", "--no-cache"]
     for rel in (".venv/Scripts/ruff.exe", ".venv/bin/ruff"):
         path = os.path.join(ROOT, rel)
         if os.path.isfile(path):
-            return [path, "check", "."]
-    return [sys.executable, "-m", "ruff", "check", "."]
+            return [path, "check", ".", "--no-cache"]
+    return [sys.executable, "-m", "ruff", "check", ".", "--no-cache"]
 
 
 def run_gate(label: str, cmd: list[str], timeout: int = 900) -> tuple[str, bool, float]:

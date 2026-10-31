@@ -6,6 +6,7 @@ Enforces strict XSS sanitization and plain-text code display.
 
 from __future__ import annotations
 
+import html
 import json
 import sys
 from pathlib import Path
@@ -117,7 +118,8 @@ def _render_finding_detail(finding: Finding) -> None:
 
     st.markdown("**Vulnerable Source at Reported Location (Escaped):**")
     # Strictly safe: st.code renders text safely without HTML/script execution
-    st.code(detail_vm.escaped_snippet or "No snippet captured.", language="text")
+    safe_code = html.unescape(detail_vm.escaped_snippet) if detail_vm.escaped_snippet else "No snippet captured."
+    st.code(safe_code, language="text")
 
 
 def _render_flagged_files(findings: List[Finding]) -> None:
@@ -461,17 +463,17 @@ def main_app(store_path: Optional[str | Path] = None) -> None:
             ]
         )
         with t1:
-            _render_flagged_files(all_scan_findings)
+            _render_flagged_files(filtered_findings)
         with t2:
             _render_codebase_report(report)
         with t3:
             _render_findings_matrix(filtered_findings)
         with t4:
-            _render_autorun_surface(all_scan_findings)
+            _render_autorun_surface(filtered_findings)
         with t5:
-            _render_category_distribution(all_scan_findings)
+            _render_category_distribution(filtered_findings)
         with t6:
-            _render_sarif_export(scan_id, all_scan_findings)
+            _render_sarif_export(scan_id, filtered_findings)
     finally:
         store.close()
 

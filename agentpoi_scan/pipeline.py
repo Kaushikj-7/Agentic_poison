@@ -27,7 +27,8 @@ from agentpoi_scan.fetch.workspace import (
     IsolatedWorkspace,
     PurgeResult,
 )
-from agentpoi_scan.findings.model import Finding, dedupe
+from agentpoi_scan.findings.model import Finding, dedupe, is_authoritative
+from agentpoi_scan.findings.risk_score import repo_risk_score
 from agentpoi_scan.intel.codebase import build_codebase_profile
 from agentpoi_scan.report.sarif import write_sarif
 from agentpoi_scan.report.store import ScanStore
@@ -103,26 +104,51 @@ class ScanPipeline:
             self.cfg = loaded if isinstance(loaded, dict) else {}
         else:
             self.cfg = dict(config or {})
+        fetch_cfg = self.cfg.get("fetch", {})
+        timeout_seconds = float(fetch_cfg.get("timeout_seconds", 60.0))
         self.client = SnapshotClient(
-            token=self.cfg.get("github_token") or os.environ.get("GITHUB_TOKEN") or None
+            token=self.cfg.get("github_token") or os.environ.get("GITHUB_TOKEN") or None,
+            timeout_seconds=timeout_seconds,
         )
-        self.scanners = [
-            PythonSastScanner(),
-            UnicodeTrojanScanner(),
-            PromptInjectionScanner(),
-            AutorunSurfaceScanner(),
-            LegacyPatternScanner(),
-            TaintFlowScanner(),
-            DependencyHygieneScanner(),
-            ExternalToolScanner(SEMGREP),
-            ExternalToolScanner(GITLEAKS),
-            ExternalToolScanner(OSV),
-            WorkflowStateChecker(),
-        ]
+        self.scanners = self._build_scanners()
         self.router_policy = EscalationPolicy.from_config(self.cfg.get("router"))
         self.store = ScanStore(store_path or Path(".agentpoi_scan/scan_store.sqlite3"))
         self.sarif_path = Path(self.cfg.get("sarif_path") or ".agentpoi_scan/findings.sarif")
         self._last_skipped_scanners: Dict[str, str] = {}
+
+    def _is_scanner_enabled(self, name: str, *aliases: str) -> bool:
+        scfg = self.cfg.get("scanners")
+        if scfg is None:
+            return True
+        candidates = (name, *aliases)
+        if isinstance(scfg, list):
+            return any(c in scfg for c in candidates)
+        if isinstance(scfg, dict):
+            for c in candidates:
+                if c in scfg:
+                    return bool(scfg[c])
+            return True
+        return True
+
+    def _build_scanners(self) -> list:
+        all_scanners = [
+            ("python_sast", PythonSastScanner()),
+            ("unicode_trojan", UnicodeTrojanScanner()),
+            ("prompt_injection", PromptInjectionScanner(), "repo_injection"),
+            ("autorun_surface", AutorunSurfaceScanner()),
+            ("legacy_patterns", LegacyPatternScanner()),
+            ("taint_flow", TaintFlowScanner()),
+            ("dependency_hygiene", DependencyHygieneScanner()),
+            ("semgrep", ExternalToolScanner(SEMGREP)),
+            ("gitleaks", ExternalToolScanner(GITLEAKS)),
+            ("osv", ExternalToolScanner(OSV)),
+            ("workflow_state", WorkflowStateChecker(), "workflow_state_checker"),
+        ]
+        return [
+            scanner_entry[1]
+            for scanner_entry in all_scanners
+            if self._is_scanner_enabled(scanner_entry[0], *scanner_entry[2:])
+        ]
 
     # -- zone 1 ---------------------------------------------------------------
     @staticmethod
@@ -137,7 +163,7 @@ class ScanPipeline:
                 continue
             rel = str(p.relative_to(target_path)).replace("\\", "/")
             parts = PurePosixPath(rel).parts
-            if any(part in {".git", ".agentpoi_scan", "__pycache__"} for part in parts):
+            if any(part in {".git", ".agentpoi_scan", "__pycache__", ".venv", "temp", "tmp"} for part in parts):
                 continue
             files[rel] = p.stat().st_size
         manifest = Manifest(snapshot_dir=str(target_path), commit_sha=commit_sha, files=files)
@@ -147,11 +173,20 @@ class ScanPipeline:
         self, repo_url: str, ref: Optional[str], workdir: Path | None
     ):
         """Fetches into a fresh isolated workspace; purges it if setup fails."""
+        fetch_cfg = self.cfg.get("fetch", {})
+        max_tarball_bytes = fetch_cfg.get("max_tarball_bytes")
+        max_total_mb = int(max_tarball_bytes // (1024 * 1024)) if max_tarball_bytes else 50
+        max_files = int(fetch_cfg.get("max_files", 5000))
         workspace = IsolatedWorkspace(root=workdir or DEFAULT_WORKSPACE_ROOT)
         try:
             snapshot = self.client.fetch(repo_url, ref=ref, dest_dir=workspace.path)
             snapshot_dir = workspace.snapshot_dir(snapshot.commit_sha)
-            manifest = extract_snapshot(snapshot.tarball_path.read_bytes(), snapshot_dir)
+            manifest = extract_snapshot(
+                snapshot.tarball_path.read_bytes(),
+                snapshot_dir,
+                max_files=max_files,
+                max_total_mb=max_total_mb,
+            )
         except Exception:
             workspace.purge()
             raise
@@ -227,7 +262,13 @@ class ScanPipeline:
                     "network": "github API tarball at pinned commit",
                     "purged": "pending",
                 }
-            context = ScanContext.from_manifest(snapshot_dir, repo_name, commit_sha, manifest)
+            context = ScanContext.from_manifest(
+                snapshot_dir,
+                repo_name,
+                commit_sha,
+                manifest,
+                redact_secrets=bool(self.cfg.get("privacy", {}).get("redact_secrets", True)),
+            )
             # Zone 2 — scanners + static codebase intelligence
             findings = self.run_scanners(
                 snapshot_dir, repo_name, commit_sha, manifest, context=context
@@ -255,10 +296,7 @@ class ScanPipeline:
         report.isolation = isolation
         report.profile = profile
         # Zone 4
-        report.risk = {
-            "vulnerable": max((f.vulnerability for f in report.findings), default=0.0),
-            "malicious": max((f.maliciousness for f in report.findings), default=0.0),
-        }
+        report.risk = repo_risk_score(report.findings)
         report.scan_id = self.store.add_scan(repo_name, commit_sha, report.findings)
         self.store.add_report(report.scan_id, self._report_payload(report))
         write_sarif(report.findings, self.sarif_path)
@@ -291,6 +329,31 @@ class ScanPipeline:
             "summary": report.summary(),
         }
 
+    def _apply_analyst_and_verifier(
+        self,
+        context: ScanContext,
+        finding: Finding,
+        verdict: Optional[dict],
+        router: Router,
+        analyst: AnalystAgent,
+        verifier: VerifierAgent,
+    ) -> None:
+        if not router.escalate(finding, verdict):
+            return
+        analyst_verdict, annotated = analyst.analyze(context, finding)
+        if analyst_verdict is None:
+            return
+        verifier_verdict, agrees = verifier.verify(context, annotated, analyst_verdict)
+        if verifier_verdict is None:
+            return
+        if agrees:
+            if analyst_verdict.get("intent") == "benign" and not is_authoritative(annotated.severity):
+                annotated.status = "refuted"
+            else:
+                annotated.status = "confirmed"
+        else:
+            annotated.status = "human_review"
+
     def refine(self, findings: List[Finding], snapshot_dir: Path, providers: TieredProviders) -> ScanReport:
         """Runs the LLM tiers over findings (all degrade to noop when unavailable)."""
         context = ScanContext(
@@ -299,6 +362,7 @@ class ScanPipeline:
             commit_sha="",
             file_index=sorted({f.file for f in findings}),
             binary_candidates=[],
+            redact_secrets=bool(self.cfg.get("privacy", {}).get("redact_secrets", True)),
         )
         router = Router(self.router_policy)
         triage_agent = TriageAgent(providers)
@@ -313,12 +377,7 @@ class ScanPipeline:
                 stats["escalated"] += 1
             else:
                 stats["triaged"] += 1
-            if router.escalate(finding, verdict):
-                analyst_verdict, annotated = analyst.analyze(context, finding)
-                if analyst_verdict is not None:
-                    verifier.verify(context, annotated, analyst_verdict)
-            # DEC-105: no finding is ever cleared here. Silencing needs
-            # verifier agreement + a human flag — never an LLM alone.
+            self._apply_analyst_and_verifier(context, finding, verdict, router, analyst, verifier)
         report = ScanReport(repo="", commit_sha="", findings=findings, triage=stats)
         return report
 

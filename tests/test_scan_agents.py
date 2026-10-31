@@ -51,6 +51,7 @@ class FakeProvider:
 def test_extract_json_variants():
     assert extract_json('{"a": 1}') == {"a": 1}
     assert extract_json('noise {"verdict": true} trailing') == {"verdict": True}
+    assert extract_json('```json\n{"verdict": true, "reason": "ok"}\n```\nHere is some trailing notes {extra}') == {"verdict": True, "reason": "ok"}
     assert extract_json("no json here") is None
     assert extract_json("") is None
 
@@ -189,7 +190,32 @@ def test_analyst_never_confirms_authoritative_alone(tmp_path):
     from agentpoi_scan.findings.model import is_authoritative as _auth
 
     assert _auth(out.severity)
-    assert out.status == "confirmed", "deterministic high-severity findings stay alive"
+    assert out.status != "confirmed", "analyst alone never confirms; verifier must agree first"
+    assert out.status in ("triaged", "escalated")
+
+
+def test_triage_mutates_finding_evidence_and_trail(tmp_path):
+    ctx = _ctx(tmp_path, {"src/app.py": "y = 2\n"})
+    providers = TieredProviders(
+        {"local": FakeProvider(lambda p: '{"verdict": true, "confidence": 0.85, "reason": "suspicious pattern", "escalate": true}')}
+    )
+    finding = _finding(status="open")
+    verdict, escalated = TriageAgent(providers).triage(ctx, finding)
+    assert escalated is True
+    assert "triage:local" in finding.model_trail
+    assert any(e.get("kind") == "triage_verdict" for e in finding.evidence)
+    assert finding.confidence >= 0.85
+    assert finding.status == "escalated"
+
+
+def test_triage_clears_non_authoritative_high_confidence(tmp_path):
+    ctx = _ctx(tmp_path, {"src/app.py": "y = 2\n"})
+    providers = TieredProviders(
+        {"local": FakeProvider(lambda p: '{"verdict": false, "confidence": 0.99, "reason": "clearly benign", "escalate": false}')}
+    )
+    finding = _finding(severity="low", status="open")
+    verdict, escalated = TriageAgent(providers).triage(ctx, finding)
+    assert finding.status == "refuted"
 
 
 def test_verifier_independent(tmp_path):

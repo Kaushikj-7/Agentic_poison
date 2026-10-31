@@ -51,9 +51,11 @@ class RepoInvariantVerifier:
         return bool(self.enabled.get(key, True))
 
     # -- projection ---------------------------------------------------------------
-    def _projected_files(self, delta: MutationDelta) -> Dict[str, str]:
-        """Return R0's files with the candidate mutation applied (hypothetical tree)."""
-        projected = self.anchor.to_files()
+    def _projected_files(
+        self, delta: MutationDelta, workspace: Optional[Dict[str, str]] = None
+    ) -> Dict[str, str]:
+        """Return base files with candidate mutation applied (hypothetical tree)."""
+        projected = dict(workspace) if workspace is not None else self.anchor.to_files()
         if delta.op == MutationOp.DELETE:
             projected.pop(delta.path, None)
         else:
@@ -63,7 +65,7 @@ class RepoInvariantVerifier:
     # -- I1 policy-file integrity -------------------------------------------------
     def check_policy_files(self, intent: IntentContract, delta: MutationDelta) -> List[InvariantViolation]:
         """A protected policy/CI artefact may only be mutated when explicitly in intent scope."""
-        if delta.is_policy_file and not intent.permits(delta.path):
+        if delta.is_policy_file and not intent.permits_policy_file(delta.path):
             return [
                 InvariantViolation(
                     "I1",
@@ -106,10 +108,12 @@ class RepoInvariantVerifier:
         return violations
 
     # -- I4 architecture ----------------------------------------------------------
-    def check_architecture(self, delta: MutationDelta) -> List[InvariantViolation]:
+    def check_architecture(
+        self, delta: MutationDelta, workspace: Optional[Dict[str, str]] = None
+    ) -> List[InvariantViolation]:
         """No forbidden layer edge, no newly-introduced dependency cycle."""
         violations: List[InvariantViolation] = []
-        projected = self._projected_files(delta)
+        projected = self._projected_files(delta, workspace=workspace)
         new_edges: Dict[str, Set[str]] = SymbolIndex().build(projected).internal_edges()
 
         for target in sorted(new_edges.get(delta.path, set())):
@@ -144,10 +148,12 @@ class RepoInvariantVerifier:
         return []
 
     # -- I6 dependency provenance -------------------------------------------------
-    def check_dependency_provenance(self, delta: MutationDelta) -> List[InvariantViolation]:
+    def check_dependency_provenance(
+        self, delta: MutationDelta, workspace: Optional[Dict[str, str]] = None
+    ) -> List[InvariantViolation]:
         """Introduced imports must be internal or present in the verified dependency set."""
         verified = self.anchor.verified_dependencies()
-        projected_index = SymbolIndex().build(self._projected_files(delta))
+        projected_index = SymbolIndex().build(self._projected_files(delta, workspace=workspace))
         violations: List[InvariantViolation] = []
         for dotted in delta.imports_added:
             if projected_index.resolve_import(dotted) is not None:
@@ -176,9 +182,11 @@ class RepoInvariantVerifier:
         return []
 
     # -- I8 cross-stack schema consensus ------------------------------------------
-    def check_cross_stack(self, delta: MutationDelta) -> List[InvariantViolation]:
+    def check_cross_stack(
+        self, delta: MutationDelta, workspace: Optional[Dict[str, str]] = None
+    ) -> List[InvariantViolation]:
         """A mutation must maintain contract consensus between frontend and backend."""
-        projected = self._projected_files(delta)
+        projected = self._projected_files(delta, workspace=workspace)
         f_extractor = FrontendCallExtractor()
         b_extractor = BackendRouteExtractor()
 
@@ -255,6 +263,7 @@ class RepoInvariantVerifier:
         intent: IntentContract,
         delta: MutationDelta,
         capability: Optional[CapabilityScope] = None,
+        workspace: Optional[Dict[str, str]] = None,
     ) -> List[InvariantViolation]:
         """Run every enabled invariant plus the design gates; return all violations found.
 
@@ -273,13 +282,13 @@ class RepoInvariantVerifier:
         if self._on("enforce_secrets"):
             violations.extend(self.check_secrets_and_egress(delta))
         if self._on("enforce_architecture"):
-            violations.extend(self.check_architecture(delta))
+            violations.extend(self.check_architecture(delta, workspace=workspace))
         if self._on("enforce_dependency_provenance"):
-            violations.extend(self.check_dependency_provenance(delta))
+            violations.extend(self.check_dependency_provenance(delta, workspace=workspace))
         if self._on("enforce_syntax_integrity"):
             violations.extend(self.check_syntax_integrity(delta))
         if self._on("enforce_cross_stack"):
-            violations.extend(self.check_cross_stack(delta))
+            violations.extend(self.check_cross_stack(delta, workspace=workspace))
         if self._on("enforce_working_parts"):
             violations.extend(self.check_working_parts(delta, capability=capability))
         violations.extend(self.check_design_decisions(delta))

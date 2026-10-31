@@ -89,3 +89,22 @@ def test_patch_hash_is_deterministic_and_content_sensitive():
     )
     assert first.patch_hash == second.patch_hash
     assert first.patch_hash != third.patch_hash
+
+
+def test_extract_detects_dead_branch_and_constant_assertions():
+    extractor = _extractor()
+    old = "def test_foo():\n    assert compute() == 42\n"
+    # assert 0 / assert ""
+    delta_zero = extractor.extract(
+        CodeMutation(path=TEST_ENGINE, op=MutationOp.MODIFY, new_content="def test_foo():\n    assert 0\n"),
+        previous_content=old,
+    )
+    assert is_weakening(delta_zero)
+
+    # if False: dead branch
+    dead_branch = "def test_foo():\n    if False:\n        assert compute() == 42\n"
+    delta_dead = extractor.extract(
+        CodeMutation(path=TEST_ENGINE, op=MutationOp.MODIFY, new_content=dead_branch),
+        previous_content=old,
+    )
+    assert is_weakening(delta_dead)

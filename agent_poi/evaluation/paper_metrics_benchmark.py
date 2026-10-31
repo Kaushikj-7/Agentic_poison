@@ -154,7 +154,7 @@ class PaperMetricsBenchmarkRunner:
             paper_citation="InjecAgent (ACL 2024)",
             evaluated_metric="Tool Hijacking Rate (%)",
             application_context="ReAct Agent Tool-Integrated Execution Sink",
-            published_baseline="> 80.0% across financial/admin tools",
+            published_baseline="High (>80 percent across financial/admin tools)",
             published_defended="N/A (Attack-only benchmark)",
             agent_poi_baseline=base_rate,
             agent_poi_defended=def_rate,

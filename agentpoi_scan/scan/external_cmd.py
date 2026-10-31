@@ -175,6 +175,29 @@ def parse_nothing(_report: str) -> List[Finding]:
     return []
 
 
+def _extract_osv_severity(vulnerability: dict) -> str:
+    db_spec = vulnerability.get("database_specific") or {}
+    db_sev = str(db_spec.get("severity") or "").lower()
+    if db_sev in ("critical", "high", "medium", "low"):
+        return db_sev
+    if db_sev == "moderate":
+        return "medium"
+
+    for severity_entry in vulnerability.get("severity", []) or []:
+        score = str(severity_entry.get("score") or "").strip()
+        try:
+            cvss = float(score)
+            return "critical" if cvss >= 9.0 else "high" if cvss >= 7.0 else "medium" if cvss >= 4.0 else "low"
+        except ValueError:
+            pass
+        match = re.search(r"(?:/|baseScore[:=]\s*)(10(?:\.0)?|[0-9](?:\.[0-9]+)?)$", score, re.IGNORECASE)
+        if match:
+            cvss = float(match.group(1))
+            return "critical" if cvss >= 9.0 else "high" if cvss >= 7.0 else "medium" if cvss >= 4.0 else "low"
+
+    return "medium"
+
+
 def parse_osv_json(report: str) -> List[Finding]:
     """Maps OSV-Scanner JSON package vulnerabilities to canonical findings."""
     data = json.loads(report) or {}
@@ -189,14 +212,7 @@ def parse_osv_json(report: str) -> List[Finding]:
             for vulnerability in package_entry.get("vulnerabilities", []) or []:
                 vuln_id = str(vulnerability.get("id") or "OSV vulnerability")
                 details = str(vulnerability.get("summary") or vulnerability.get("details") or "")
-                severity = "high"
-                for severity_entry in vulnerability.get("severity", []) or []:
-                    score = str(severity_entry.get("score") or "")
-                    match = re.search(r"(?:^|/)([0-9]+(?:\.[0-9]+)?)", score)
-                    if match:
-                        cvss = float(match.group(1))
-                        severity = "critical" if cvss >= 9.0 else "high" if cvss >= 7.0 else "medium" if cvss >= 4.0 else "low"
-                        break
+                severity = _extract_osv_severity(vulnerability)
                 findings.append(
                     Finding(
                         file=source_path,

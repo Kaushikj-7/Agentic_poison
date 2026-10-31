@@ -56,6 +56,15 @@ class TriageAgent:
                 verdict["verdict"] = True
                 verdict["escalate"] = True
         escalated = bool(verdict.get("escalate"))
+        finding.model_trail.append(f"triage:{self.tier}")
+        finding.evidence.append(
+            {"kind": "triage_verdict", "source": "triage", "text": str(verdict.get("reason", ""))[:400]}
+        )
+        finding.confidence = max(finding.confidence, confidence)
+        if wants_clear and not is_authoritative(finding.severity) and confidence >= 0.95:
+            finding.status = "refuted"
+        elif finding.status == "open":
+            finding.status = "escalated" if escalated else "triaged"
         return verdict, escalated
 
     def _prompt(self, context: ScanContext, finding: Finding) -> str:

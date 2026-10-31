@@ -32,90 +32,36 @@ MAX_ENTRYPOINTS = 200
 # -- languages and roles -------------------------------------------------------
 
 LANGUAGE_BY_SUFFIX: Dict[str, str] = {
-    ".py": "Python",
-    ".js": "JavaScript",
-    ".mjs": "JavaScript",
-    ".cjs": "JavaScript",
-    ".jsx": "JavaScript",
-    ".ts": "TypeScript",
-    ".tsx": "TypeScript",
-    ".php": "PHP",
-    ".phtml": "PHP",
-    ".rb": "Ruby",
-    ".go": "Go",
-    ".rs": "Rust",
-    ".java": "Java",
-    ".kt": "Kotlin",
-    ".kts": "Kotlin",
-    ".c": "C",
-    ".h": "C",
-    ".cc": "C++",
-    ".cpp": "C++",
-    ".hpp": "C++",
-    ".cs": "C#",
-    ".swift": "Swift",
-    ".sh": "Shell",
-    ".bash": "Shell",
-    ".zsh": "Shell",
-    ".ps1": "PowerShell",
-    ".bat": "Batch",
-    ".sql": "SQL",
-    ".html": "HTML",
-    ".css": "CSS",
-    ".scss": "CSS",
-    ".vue": "Vue",
-    ".svelte": "Svelte",
-    ".lua": "Lua",
-    ".pl": "Perl",
-    ".dart": "Dart",
-    ".ex": "Elixir",
-    ".exs": "Elixir",
-    ".scala": "Scala",
+    ".py": "Python", ".js": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
+    ".jsx": "JavaScript", ".ts": "TypeScript", ".tsx": "TypeScript", ".php": "PHP",
+    ".phtml": "PHP", ".rb": "Ruby", ".go": "Go", ".rs": "Rust", ".java": "Java",
+    ".kt": "Kotlin", ".kts": "Kotlin", ".c": "C", ".h": "C", ".cc": "C++",
+    ".cpp": "C++", ".hpp": "C++", ".cs": "C#", ".swift": "Swift", ".sh": "Shell",
+    ".bash": "Shell", ".zsh": "Shell", ".ps1": "PowerShell", ".bat": "Batch",
+    ".sql": "SQL", ".html": "HTML", ".css": "CSS", ".scss": "CSS", ".vue": "Vue",
+    ".svelte": "Svelte", ".lua": "Lua", ".pl": "Perl", ".dart": "Dart",
+    ".ex": "Elixir", ".exs": "Elixir", ".scala": "Scala",
 }
 
 SPECIAL_LANGUAGE_BY_NAME: Dict[str, str] = {
-    "dockerfile": "Docker",
-    "makefile": "Make",
-    "gnumakefile": "Make",
-    "gemfile": "Ruby",
-    "rakefile": "Ruby",
-    "procfile": "Config",
+    "dockerfile": "Docker", "makefile": "Make", "gnumakefile": "Make",
+    "gemfile": "Ruby", "rakefile": "Ruby", "procfile": "Config",
 }
 
 VENDOR_DIRS = {
-    "node_modules",
-    "vendor",
-    "third_party",
-    "third-party",
-    "bower_components",
-    "site-packages",
-    ".venv",
-    "venv",
+    "node_modules", "vendor", "third_party", "third-party",
+    "bower_components", "site-packages", ".venv", "venv",
 }
 GENERATED_DIRS = {"dist", "build", "out", "coverage", ".next", "target"}
 TEST_DIRS = {"test", "tests", "__tests__", "spec", "specs"}
 CI_DIRS = {".github", ".circleci", ".gitlab", ".buildkite", ".azure"}
 CI_FILES = {
-    ".travis.yml",
-    "jenkinsfile",
-    "azure-pipelines.yml",
-    "bitbucket-pipelines.yml",
-    "appveyor.yml",
-    ".gitlab-ci.yml",
+    ".travis.yml", "jenkinsfile", "azure-pipelines.yml",
+    "bitbucket-pipelines.yml", "appveyor.yml", ".gitlab-ci.yml",
 }
 CONFIG_SUFFIXES = {
-    ".yml",
-    ".yaml",
-    ".toml",
-    ".ini",
-    ".cfg",
-    ".conf",
-    ".json",
-    ".lock",
-    ".env",
-    ".properties",
-    ".xml",
-    ".gradle",
+    ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf",
+    ".json", ".lock", ".env", ".properties", ".xml", ".gradle",
 }
 
 
@@ -660,52 +606,69 @@ _PROC_FILE = re.compile(r"^([A-Za-z0-9_-]+)\s*:\s*(.+)$")
 _DOCKER_RUN = re.compile(r"^\s*(?:CMD|ENTRYPOINT)\s+(.+)$", re.IGNORECASE)
 
 
+def _parse_manifest_scripts(name: str, text: str) -> Optional[Dict[str, str]]:
+    if name == "package.json":
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return None
+        block = (data or {}).get("scripts") if isinstance(data, dict) else None
+        return {str(k): str(v)[:200] for k, v in block.items()} if isinstance(block, dict) else None
+    if name == "pyproject.toml" and tomllib is not None:
+        try:
+            data = tomllib.loads(text)
+        except (ValueError, AttributeError):
+            return None
+        p_scripts = (data.get("project") or {}).get("scripts") or {}
+        po_scripts = ((data.get("tool") or {}).get("poetry") or {}).get("scripts") or {}
+        merged = {
+            str(k): str(v)[:200]
+            for block in (p_scripts, po_scripts)
+            if isinstance(block, dict)
+            for k, v in block.items()
+        }
+        return merged or None
+    targets = {
+        match.group(1): ""
+        for line in text.splitlines()
+        if (match := _MAKE_TARGET.match(line)) and not match.group(1).startswith(".")
+    }
+    return targets or None
+
+
 def detect_scripts(context: ScanContext) -> tuple[Dict[str, Dict[str, str]], List[str]]:
     """Returns declared run scripts per manifest plus the manifest inventory."""
     scripts: Dict[str, Dict[str, str]] = {}
     manifests: List[str] = []
+    manifest_names = {"package.json", "pyproject.toml", "makefile", "gnumakefile"}
     for relpath in context.file_index:
         ecosystem = _manifest_ecosystem(relpath)
         if ecosystem is not None:
             manifests.append(relpath)
         pure = PurePosixPath(relpath)
         name = pure.name.lower()
-        text = _read(context, relpath) if name in {"package.json", "pyproject.toml", "makefile", "gnumakefile"} else None
-        if not text:
-            continue
-        if name == "package.json":
-            try:
-                data = json.loads(text)
-            except ValueError:
-                continue
-            block = (data or {}).get("scripts") if isinstance(data, dict) else None
-            if isinstance(block, dict):
-                scripts[relpath] = {str(k): str(v)[:200] for k, v in block.items()}
-        elif name == "pyproject.toml" and tomllib is not None:
-            try:
-                data = tomllib.loads(text)
-            except (ValueError, AttributeError):
-                continue
-            project_scripts = (data.get("project") or {}).get("scripts") or {}
-            poetry_scripts = ((data.get("tool") or {}).get("poetry") or {}).get("scripts") or {}
-            merged = {
-                str(k): str(v)[:200]
-                for block in (project_scripts, poetry_scripts)
-                if isinstance(block, dict)
-                for k, v in block.items()
-            }
-            if merged:
-                scripts[relpath] = merged
-        else:
-            targets = {
-                match.group(1): ""
-                for line in text.splitlines()
-                if (match := _MAKE_TARGET.match(line))
-                and not match.group(1).startswith(".")
-            }
-            if targets:
-                scripts[relpath] = targets
+        if name in manifest_names and (text := _read(context, relpath)):
+            parsed = _parse_manifest_scripts(name, text)
+            if parsed:
+                scripts[relpath] = parsed
     return scripts, sorted(manifests)
+
+
+def _detect_file_entrypoints(relpath: str, name: str, suffix: str, text: str) -> List[Dict[str, Any]]:
+    hits: List[Dict[str, Any]] = []
+    if name.startswith("dockerfile") or name.endswith(".dockerfile"):
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if match := _DOCKER_RUN.match(line):
+                hits.append({"file": relpath, "line": lineno, "kind": "dockerfile", "value": line.strip()[:200]})
+    elif name == "procfile":
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if match := _PROC_FILE.match(line.strip()):
+                hits.append({"file": relpath, "line": lineno, "kind": f"procfile:{match.group(1)}", "value": match.group(2)[:200]})
+    elif suffix in LANGUAGE_BY_SUFFIX or not suffix:
+        first_line = text.splitlines()[0] if text.splitlines() else ""
+        if first_line.startswith("#!"):
+            hits.append({"file": relpath, "line": 1, "kind": "shebang", "value": first_line[:200]})
+    return hits
 
 
 def detect_entrypoints(context: ScanContext) -> List[Dict[str, Any]]:
@@ -713,42 +676,10 @@ def detect_entrypoints(context: ScanContext) -> List[Dict[str, Any]]:
     entrypoints: List[Dict[str, Any]] = []
     for relpath in context.file_index:
         pure = PurePosixPath(relpath)
-        name = pure.name.lower()
-        suffix = pure.suffix.lower()
-        if name.startswith("dockerfile") or name.endswith(".dockerfile"):
-            text = _read(context, relpath)
-            if not text:
-                continue
-            for lineno, line in enumerate(text.splitlines(), start=1):
-                match = _DOCKER_RUN.match(line)
-                if match:
-                    entrypoints.append(
-                        {"file": relpath, "line": lineno, "kind": "dockerfile", "value": line.strip()[:200]}
-                    )
-        elif name == "procfile":
-            text = _read(context, relpath)
-            if not text:
-                continue
-            for lineno, line in enumerate(text.splitlines(), start=1):
-                match = _PROC_FILE.match(line.strip())
-                if match:
-                    entrypoints.append(
-                        {
-                            "file": relpath,
-                            "line": lineno,
-                            "kind": f"procfile:{match.group(1)}",
-                            "value": match.group(2)[:200],
-                        }
-                    )
-        elif suffix in LANGUAGE_BY_SUFFIX or not suffix:
-            text = _read(context, relpath)
-            if not text:
-                continue
-            first_line = text.splitlines()[0] if text.splitlines() else ""
-            if first_line.startswith("#!"):
-                entrypoints.append(
-                    {"file": relpath, "line": 1, "kind": "shebang", "value": first_line[:200]}
-                )
+        text = _read(context, relpath)
+        if text:
+            hits = _detect_file_entrypoints(relpath, pure.name.lower(), pure.suffix.lower(), text)
+            entrypoints.extend(hits)
         if len(entrypoints) >= MAX_ENTRYPOINTS:
             break
     return entrypoints[:MAX_ENTRYPOINTS]

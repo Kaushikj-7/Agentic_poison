@@ -18,6 +18,7 @@ class SlicerSecurityResult:
     violations: List[str] = field(default_factory=list)
     found_secrets: List[str] = field(default_factory=list)
     dangerous_calls: List[str] = field(default_factory=list)
+    dangerous_call_lines: List[Tuple[str, int]] = field(default_factory=list)
     injection_hits: List[str] = field(default_factory=list)
 
 
@@ -91,7 +92,6 @@ class SlicerSecurityValidator:
         "http.client.",
         "socket.",
         "_socket.",
-        "_socket",
         "ftplib.",
         "smtplib.",
         "urllib3.",
@@ -147,6 +147,7 @@ class SlicerSecurityValidator:
         secrets = self._scan_secrets(code)
         injections = self._scan_injections(code)
         dangerous_calls: List[str] = []
+        dangerous_call_lines: List[Tuple[str, int]] = []
 
         if secrets:
             violations.append(f"Contains credential material: {secrets}")
@@ -155,7 +156,7 @@ class SlicerSecurityValidator:
 
         try:
             tree = ast.parse(code)
-            dangerous_calls = self._scan_dangerous_ast(tree)
+            dangerous_calls, dangerous_call_lines = self._scan_dangerous_ast(tree)
             if dangerous_calls:
                 violations.append(f"Contains prohibited execution calls: {dangerous_calls}")
         except SyntaxError as exc:
@@ -166,6 +167,7 @@ class SlicerSecurityValidator:
             violations=violations,
             found_secrets=secrets,
             dangerous_calls=dangerous_calls,
+            dangerous_call_lines=dangerous_call_lines,
             injection_hits=injections,
         )
 
@@ -209,7 +211,7 @@ class SlicerSecurityValidator:
             return False
         if name in self.DANGEROUS_BUILTINS:
             return True
-        if name in ("socket", "_socket") or any(name.startswith(pfx) for pfx in self.DANGEROUS_MODULE_PREFIXES):
+        if any(name.startswith(pfx) for pfx in self.DANGEROUS_MODULE_PREFIXES):
             return True
         if name in self.DANGEROUS_EXACT_CALLS:
             return True
@@ -259,12 +261,12 @@ class SlicerSecurityValidator:
                 return f"{target_obj}.{attr_arg.value}" if target_obj else attr_arg.value
         return None
 
-    def _scan_dangerous_ast(self, tree: ast.AST) -> List[str]:
+    def _scan_dangerous_ast(self, tree: ast.AST) -> Tuple[List[str], List[Tuple[str, int]]]:
         """Inspects AST nodes for dangerous or prohibited function invocations."""
         initial_aliases = self._build_alias_map(tree)
         visitor = _SecurityASTVisitor(self, initial_aliases)
         visitor.visit(tree)
-        return visitor.dangerous_calls
+        return visitor.dangerous_calls, visitor.dangerous_call_lines
 
     def _resolve_call_name(self, node: ast.AST, aliases: Optional[dict[str, str]] = None) -> str:
         """Extracts dotted call name with alias expansion (e.g., 'sp.run' -> 'subprocess.run')."""
@@ -287,6 +289,12 @@ class _SecurityASTVisitor(ast.NodeVisitor):
         self.validator = validator
         self.aliases = initial_aliases.copy()
         self.dangerous_calls: List[str] = []
+        self.dangerous_call_lines: List[Tuple[str, int]] = []
+
+    def _record_dangerous(self, name: str, node: ast.AST) -> None:
+        self.dangerous_calls.append(name)
+        lineno = getattr(node, "lineno", 1)
+        self.dangerous_call_lines.append((name, lineno))
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self._check_assignment(node.targets, node.value)
@@ -359,7 +367,7 @@ class _SecurityASTVisitor(ast.NodeVisitor):
         getattr_target = self.validator._resolve_getattr_target(value, self.aliases)
         if getattr_target:
             if self.validator._is_dangerous(getattr_target):
-                self.dangerous_calls.append(getattr_target)
+                self._record_dangerous(getattr_target, value)
                 for target in targets:
                     if isinstance(target, ast.Name):
                         self.aliases[target.id] = getattr_target
@@ -374,7 +382,7 @@ class _SecurityASTVisitor(ast.NodeVisitor):
         if isinstance(value, (ast.Name, ast.Attribute)):
             resolved = self.validator._resolve_call_name(value, self.aliases)
             if self.validator._is_dangerous(resolved):
-                self.dangerous_calls.append(resolved)
+                self._record_dangerous(resolved, value)
                 for target in targets:
                     if isinstance(target, ast.Name):
                         self.aliases[target.id] = resolved
@@ -389,7 +397,7 @@ class _SecurityASTVisitor(ast.NodeVisitor):
         if isinstance(value, ast.Call):
             resolved_call = self.validator._resolve_call_name(value.func, self.aliases)
             if self.validator._is_dangerous(resolved_call):
-                self.dangerous_calls.append(resolved_call)
+                self._record_dangerous(resolved_call, value)
                 for target in targets:
                     if isinstance(target, ast.Name):
                         self.aliases[target.id] = resolved_call
@@ -399,17 +407,17 @@ class _SecurityASTVisitor(ast.NodeVisitor):
         # Check if call itself is getattr(...) targeting dangerous attribute
         getattr_target = self.validator._resolve_getattr_target(node, self.aliases)
         if getattr_target and self.validator._is_dangerous(getattr_target):
-            self.dangerous_calls.append(getattr_target)
+            self._record_dangerous(getattr_target, node)
 
         # Check if func being invoked is a getattr(...) call
         getattr_target_func = self.validator._resolve_getattr_target(node.func, self.aliases)
         if getattr_target_func and self.validator._is_dangerous(getattr_target_func):
-            self.dangerous_calls.append(getattr_target_func)
+            self._record_dangerous(getattr_target_func, node)
 
         # Check resolved name of invoked callable
         name = self.validator._resolve_call_name(node.func, self.aliases)
         if self.validator._is_dangerous(name):
-            self.dangerous_calls.append(name)
+            self._record_dangerous(name, node)
         else:
             func_node = node.func
             while isinstance(func_node, ast.NamedExpr):
@@ -419,8 +427,7 @@ class _SecurityASTVisitor(ast.NodeVisitor):
                 and func_node.attr in self.validator.SOCKET_METHOD_NAMES
             ):
                 prefix = self.validator._resolve_call_name(func_node.value, self.aliases)
-                self.dangerous_calls.append(
-                    f"{prefix}.{func_node.attr}" if prefix else f"socket.{func_node.attr}"
-                )
+                target_name = f"{prefix}.{func_node.attr}" if prefix else f"socket.{func_node.attr}"
+                self._record_dangerous(target_name, node)
 
         self.generic_visit(node)

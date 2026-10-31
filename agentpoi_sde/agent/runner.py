@@ -31,6 +31,7 @@ from agentpoi_sde.graph.arch_ledger import ArchitecturalLedger
 from agentpoi_sde.graph.context_router import CryptographicContextRouter, RoutedContextBundle
 from agentpoi_sde.graph.graph_indexer import GraphIndexer
 from agentpoi_sde.graph.merkle_graph import MerkleKnowledgeGraph, NodeType
+from agentpoi_sde.provenance.code_provenance import SourceOrigin
 from agentpoi_sde.sink.atomic_writer import AtomicDiskWriter
 from agentpoi_sde.verify.invariant_verifier import RepoInvariantVerifier
 
@@ -236,6 +237,8 @@ class AutonomousAgentRunner:
 
     def _write_disk_mutation(self, mutation: CodeMutation) -> None:
         """Write approved mutation to disk atomically if not already applied by DevGuard."""
+        if not self.guard.apply_to_disk and getattr(self.guard, "repo_dir", None) is None:
+            return
         rel_path = mutation.path.replace("\\", "/").strip()
         if rel_path not in self._touched_files:
             self._record_pre_mutation_state(rel_path)
@@ -285,18 +288,18 @@ class AutonomousAgentRunner:
         self.guard.merkle_graph = fresh_graph
         self._init_merkle_graph()
 
+        # 5. Restore architectural ledger and mutation audit ledger lengths
+        if hasattr(self.guard, "arch_ledger") and hasattr(self.guard.arch_ledger, "_blocks"):
+            self.guard.arch_ledger._blocks = self.guard.arch_ledger._blocks[: self._initial_arch_blocks_len]
+        if hasattr(self.guard, "ledger"):
+            self.guard.ledger = self.guard.ledger[: self._initial_ledger_len]
+
     def _update_merkle_graph(self, mutation: CodeMutation) -> None:
         """Update Merkle knowledge graph following an approved mutation."""
         if mutation.op == MutationOp.DELETE:
             return
         if mutation.path.endswith(".py"):
             self.graph_indexer.index_source(self.merkle_graph, mutation.path, mutation.new_content)
-        else:
-            self.merkle_graph.add_node(
-                f"file:{mutation.path}",
-                NodeType.FILE,
-                {"path": mutation.path, "size": len(mutation.new_content)},
-            )
 
     def _prompt_interactive(self, step: int, mutation: CodeMutation) -> str:
         """Prompt user for confirmation in interactive mode on stderr. Returns 'A', 'R', or 'Q'."""
@@ -373,6 +376,12 @@ class AutonomousAgentRunner:
         tid = task_id or f"TASK-{hashlib.sha256(effective_task.encode('utf-8')).hexdigest()[:8]}"
         self._initial_workspace = dict(self.guard.workspace)
         self._touched_files = {}
+        self._initial_ledger_len = len(self.guard.ledger) if hasattr(self.guard, "ledger") else 0
+        self._initial_arch_blocks_len = (
+            len(self.guard.arch_ledger._blocks)
+            if hasattr(self.guard, "arch_ledger") and hasattr(self.guard.arch_ledger, "_blocks")
+            else 0
+        )
         r0 = self.guard.anchor.tree_oid()
         self._init_merkle_graph()
         m0 = self.merkle_graph.compute_merkle_root()
@@ -476,8 +485,14 @@ class AutonomousAgentRunner:
         rollback_on_failure: Optional[bool] = None,
     ) -> UnforgeableVerificationReport:
         """Run the multi-step autonomous agent loop with fail-closed gating."""
+        all_untrusted = list(untrusted_contexts or [])
+        if context:
+            all_untrusted.append(("context", context))
+        for _label, text in all_untrusted:
+            self.guard.register_context(text, origin=SourceOrigin.UNTRUSTED_WEB)
+
         eff_task, tid, r0, m0 = self._init_run_session(task, task_id, allowed_paths)
-        quit_flag, budget_flag, limit_flag = self._run_loop(tid, eff_task, untrusted_contexts)
+        quit_flag, budget_flag, limit_flag = self._run_loop(tid, eff_task, all_untrusted)
 
         applied = sum(1 for tr in self.transitions if tr.status == "APPROVED")
         blocked = sum(1 for tr in self.transitions if tr.status == "BLOCKED")

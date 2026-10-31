@@ -30,15 +30,19 @@ class ScanContext:
     commit_sha: str
     file_index: List[str] = field(default_factory=list)
     binary_candidates: List[str] = field(default_factory=list)
+    redact_secrets: bool = True
 
     @classmethod
-    def from_manifest(cls, snapshot_dir: Path, repo: str, commit_sha: str, manifest) -> "ScanContext":
+    def from_manifest(
+        cls, snapshot_dir: Path, repo: str, commit_sha: str, manifest, redact_secrets: bool = True
+    ) -> "ScanContext":
         return cls(
             snapshot_dir=Path(snapshot_dir),
             repo=repo,
             commit_sha=commit_sha,
             file_index=sorted(manifest.files),
             binary_candidates=list(manifest.binary_candidates),
+            redact_secrets=redact_secrets,
         )
 
     # -- helpers ----------------------------------------------------------------

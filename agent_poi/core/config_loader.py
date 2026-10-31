@@ -43,7 +43,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "retrieval_gate": {
         "enabled": True,
         "min_task_similarity": 0.35,
-        "max_divergence_penalty": 0.30,
+        "max_divergence_penalty": 0.35,
     },
     "runtime": {
         "mode": "mock",
@@ -94,6 +94,20 @@ def _resolve_config_path(override_path: Optional[str] = None) -> Optional[str]:
     return None
 
 
+class ConfigurationError(ValueError):
+    """Raised when configuration validation encounters invalid or dead keys."""
+    pass
+
+
+def validate_config(data: Dict[str, Any]) -> None:
+    """Validate that configuration dictionary contains only supported active keys."""
+    if not isinstance(data, dict):
+        raise ConfigurationError("Configuration root must be a dictionary.")
+    for section in data:
+        if section not in DEFAULT_CONFIG and section not in ("scanners", "invariants", "models"):
+            raise ConfigurationError(f"Unknown or dead configuration section: '{section}'.")
+
+
 @lru_cache(maxsize=4)
 def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     """Load configuration dictionary from YAML file, falling back to embedded defaults."""
@@ -103,7 +117,10 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             with open(target_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             if isinstance(data, dict) and data:
+                validate_config(data)
                 return data
+        except ConfigurationError:
+            raise
         except Exception as exc:
             import logging
             logging.getLogger("agent_poi.core.config_loader").warning(

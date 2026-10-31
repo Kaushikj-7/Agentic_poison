@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from agentpoi_scan.findings.model import Finding, severity_rank
+from agentpoi_scan.findings.model import Finding, is_authoritative, severity_rank
 
 _WEIGHT: Dict[int, float] = {3: 1.0, 2: 0.9, 1: 0.6, 0: 0.3}
 
@@ -16,6 +16,8 @@ _WEIGHT: Dict[int, float] = {3: 1.0, 2: 0.9, 1: 0.6, 0: 0.3}
 def _weighted_max(findings: List[Finding], attr: str) -> float:
     best = 0.0
     for finding in findings:
+        if finding.status == "refuted" and not is_authoritative(finding.severity):
+            continue
         base = float(getattr(finding, attr))
         if base <= 0.0:
             continue

@@ -54,7 +54,39 @@ class InvariantVerifier:
         violations = []
         verified_name = None
 
-        if delta.target_account:
+        accounts_to_check = list(delta.all_accounts) if delta.all_accounts else []
+        if delta.target_account and delta.target_account not in accounts_to_check:
+            accounts_to_check.append(delta.target_account)
+
+        for acc in accounts_to_check:
+            if not self.anchor.is_payee_verified(acc):
+                violations.append(
+                    f"INVARIANT BREACH: Target account '{acc}' is NOT in verified payee registry."
+                )
+            elif not verified_name:
+                payee = self.anchor.get_payee(acc)
+                verified_name = payee.name
+
+        amounts_to_check = list(delta.all_amounts) if delta.all_amounts else []
+        if delta.amount is not None and delta.amount not in amounts_to_check:
+            amounts_to_check.append(delta.amount)
+
+        for amt in amounts_to_check:
+            is_valid_num = (
+                isinstance(amt, (int, float))
+                and not isinstance(amt, bool)
+                and not math.isnan(amt)
+                and not math.isinf(amt)
+                and amt > 0
+            )
+            if not is_valid_num:
+                violations.append("LIMIT BREACH: Amount is not a valid positive finite number.")
+            elif amt > self.anchor.per_transaction_limit:
+                violations.append(
+                    f"LIMIT BREACH: Amount ${amt:.2f} exceeds global ceiling (${self.anchor.per_transaction_limit:.2f})."
+                )
+
+        if False and not delta.target_account:
             if not self.anchor.is_payee_verified(delta.target_account):
                 violations.append(
                     f"INVARIANT BREACH: Target account '{delta.target_account}' is NOT in verified payee registry."

@@ -29,6 +29,49 @@ ASSERT_PATTERN = re.compile(r"\bassert\b|\.assert(?:Equal|True|False|In|Is|Raise
 SKIP_PATTERN = re.compile(r"pytest\.skip|pytest\.mark\.skip|unittest\.skip|@skip|xfail|@unittest\.skip")
 
 
+def _check_cmp_op(op: ast.cmpop, left: Any, right: Any) -> bool:
+    """Evaluate comparison operator between two constant values."""
+    if isinstance(op, ast.Eq):
+        return bool(left == right)
+    if isinstance(op, ast.NotEq):
+        return bool(left != right)
+    if isinstance(op, ast.Lt):
+        return bool(left < right)
+    if isinstance(op, ast.LtE):
+        return bool(left <= right)
+    if isinstance(op, ast.Gt):
+        return bool(left > right)
+    if isinstance(op, ast.GtE):
+        return bool(left >= right)
+    if isinstance(op, ast.Is):
+        return left is right
+    if isinstance(op, ast.IsNot):
+        return left is not right
+    if isinstance(op, ast.In):
+        return bool(left in right)
+    if isinstance(op, ast.NotIn):
+        return bool(left not in right)
+    return False
+
+
+def _eval_const_compare(node: ast.Compare) -> Tuple[bool, Any]:
+    """Evaluate compile-time comparison chain."""
+    ok_left, current = _eval_const_expr(node.left)
+    if not ok_left:
+        return False, None
+    for op, comp in zip(node.ops, node.comparators):
+        ok_comp, comp_val = _eval_const_expr(comp)
+        if not ok_comp:
+            return False, None
+        try:
+            if not _check_cmp_op(op, current, comp_val):
+                return True, False
+        except TypeError:
+            return False, None
+        current = comp_val
+    return True, True
+
+
 def _eval_const_expr(node: ast.AST) -> Tuple[bool, Any]:
     """Safely evaluate compile-time constant expressions in AST without execution."""
     if isinstance(node, ast.Constant):
@@ -62,87 +105,90 @@ def _eval_const_expr(node: ast.AST) -> Tuple[bool, Any]:
         if isinstance(node.op, ast.Or):
             return True, any(vals)
     if isinstance(node, ast.Compare):
-        ok_left, current = _eval_const_expr(node.left)
-        if not ok_left:
-            return False, None
-        for op, comp in zip(node.ops, node.comparators):
-            ok_comp, comp_val = _eval_const_expr(comp)
-            if not ok_comp:
-                return False, None
-            try:
-                if isinstance(op, ast.Eq) and not (current == comp_val):
-                    return True, False
-                elif isinstance(op, ast.NotEq) and not (current != comp_val):
-                    return True, False
-                elif isinstance(op, ast.Lt) and not (current < comp_val):
-                    return True, False
-                elif isinstance(op, ast.LtE) and not (current <= comp_val):
-                    return True, False
-                elif isinstance(op, ast.Gt) and not (current > comp_val):
-                    return True, False
-                elif isinstance(op, ast.GtE) and not (current >= comp_val):
-                    return True, False
-                elif isinstance(op, ast.Is) and current is not comp_val:
-                    return True, False
-                elif isinstance(op, ast.IsNot) and not (current is not comp_val):
-                    return True, False
-                elif isinstance(op, ast.In) and current not in comp_val:
-                    return True, False
-                elif isinstance(op, ast.NotIn) and not (current not in comp_val):
-                    return True, False
-            except TypeError:
-                return False, None
-            current = comp_val
-        return True, True
+        return _eval_const_compare(node)
     return False, None
 
 
+def _iter_reachable_nodes(node: ast.AST):
+    """Yield all reachable AST nodes, skipping statically unreachable branches."""
+    yield node
+    if isinstance(node, (ast.If, ast.While)):
+        ok, val = _eval_const_expr(node.test)
+        if ok:
+            if bool(val):
+                for child in node.body:
+                    yield from _iter_reachable_nodes(child)
+            else:
+                for child in node.orelse:
+                    yield from _iter_reachable_nodes(child)
+            return
+
+    for child in ast.iter_child_nodes(node):
+        yield from _iter_reachable_nodes(child)
+
+
 def _is_trivial_assertion(node: ast.Assert) -> bool:
-    """Return True if an assert statement is a tautological triviality."""
-    ok, val = _eval_const_expr(node.test)
-    if ok:
-        return bool(val) or val is False
+    """Return True if an assert statement is a tautological compile-time constant."""
+    ok, _val = _eval_const_expr(node.test)
+    return ok
+
+
+def _is_trivial_call_assertion(node: ast.Call) -> bool:
+    """Return True if an unittest assert method call is trivially constant."""
+    if not (isinstance(node.func, ast.Attribute) and node.func.attr.startswith("assert")):
+        return False
+    if node.func.attr in ("assertTrue", "assertFalse"):
+        if node.args and isinstance(node.args[0], ast.Constant):
+            return True
+    elif node.func.attr == "assertEqual":
+        if (
+            len(node.args) >= 2
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[0].value == node.args[1].value
+        ):
+            return True
+    return False
+
+
+def _is_effective_assertion_node(node: ast.AST) -> bool:
+    """Check if an AST node is a non-trivial reachable assertion."""
+    if isinstance(node, ast.Assert):
+        return not _is_trivial_assertion(node)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        if node.func.attr.startswith("assert"):
+            return not _is_trivial_call_assertion(node)
     return False
 
 
 def _count_effective_assertions(source: str) -> int:
-    """Count effective, non-trivial assertions using AST analysis."""
+    """Count effective, non-trivial assertions using AST reachability analysis."""
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return len(ASSERT_PATTERN.findall(source))
 
     count = 0
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assert):
-            if not _is_trivial_assertion(node):
-                count += 1
-        elif isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Attribute) and node.func.attr.startswith("assert"):
-                if node.func.attr in ("assertTrue", "assertFalse"):
-                    if node.args and isinstance(node.args[0], ast.Constant):
-                        continue
-                elif node.func.attr == "assertEqual":
-                    if (
-                        len(node.args) >= 2
-                        and isinstance(node.args[0], ast.Constant)
-                        and isinstance(node.args[1], ast.Constant)
-                        and node.args[0].value == node.args[1].value
-                    ):
-                        continue
-                count += 1
+    for node in _iter_reachable_nodes(tree):
+        if _is_effective_assertion_node(node):
+            count += 1
     return count
 
 
 def _has_trivial_assertion(source: str) -> bool:
-    """Return True if the source contains any tautological/trivial assertion."""
+    """Return True if source contains trivial assertions or dead-branch trivialization."""
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return False
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Assert) and _is_trivial_assertion(node):
             return True
+        if isinstance(node, (ast.If, ast.While)):
+            ok, val = _eval_const_expr(node.test)
+            if ok and not bool(val):
+                return True
     return False
 
 

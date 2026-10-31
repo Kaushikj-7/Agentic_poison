@@ -162,6 +162,26 @@ def _eval_single_mutation(
     saved_anchor = dict(guard.anchor.files)
     saved_ledger_len = len(guard.ledger)
     saved_audit_len = len(guard.audit_log)
+    saved_arch_len = (
+        len(guard.arch_ledger._blocks)
+        if hasattr(guard, "arch_ledger") and hasattr(guard.arch_ledger, "_blocks")
+        else 0
+    )
+    saved_touched = (
+        set(guard.capability._touched_files)
+        if guard.capability and hasattr(guard.capability, "_touched_files")
+        else None
+    )
+    saved_mg_nodes = (
+        dict(guard.merkle_graph.nodes)
+        if hasattr(guard, "merkle_graph") and hasattr(guard.merkle_graph, "nodes")
+        else None
+    )
+    saved_mg_edges = (
+        list(guard.merkle_graph.edges)
+        if hasattr(guard, "merkle_graph") and hasattr(guard.merkle_graph, "edges")
+        else None
+    )
 
     verdict = guard.propose_mutation(mutation, intent_id=intent_id)
 
@@ -174,6 +194,13 @@ def _eval_single_mutation(
             guard.ledger = guard.ledger[:saved_ledger_len]
         if len(guard.audit_log) > saved_audit_len:
             guard.audit_log = guard.audit_log[:saved_audit_len]
+        if hasattr(guard, "arch_ledger") and hasattr(guard.arch_ledger, "_blocks"):
+            guard.arch_ledger._blocks = guard.arch_ledger._blocks[:saved_arch_len]
+        if saved_touched is not None and guard.capability:
+            guard.capability._touched_files = saved_touched
+        if saved_mg_nodes is not None and hasattr(guard, "merkle_graph"):
+            guard.merkle_graph.nodes = saved_mg_nodes
+            guard.merkle_graph.edges = saved_mg_edges
 
     violations_str = [
         v if isinstance(v, str) else getattr(v, "message", str(v))

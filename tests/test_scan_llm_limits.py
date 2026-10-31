@@ -203,3 +203,18 @@ def test_minute_window_reset_allows_new_burst():
     t[0] = 161.0  # window rolled over
     limiter.generate("p2")
     assert inner.calls == 2
+
+
+def test_shared_openrouter_rate_limiter(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+    cfg = {
+        "tiers": {
+            "local": {"provider": "openrouter"},
+            "frontier": {"provider": "openrouter"},
+        },
+        "limits": {"requests_per_minute": 15, "max_requests_per_scan": 2},
+    }
+    providers, _ = build_default_providers(cfg)
+    p_local = providers.providers["local"]
+    p_frontier = providers.providers["frontier"]
+    assert p_local.shared_limiter is p_frontier.shared_limiter

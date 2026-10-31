@@ -40,15 +40,46 @@ class Snapshot:
     repo: str
 
 
-def parse_repo_slug(repo_url: str) -> str:
-    """Extracts 'owner/name' from a GitHub URL or bare ``owner/name`` slug."""
+class RepoSlug(str):
+    """Subclass of str representing 'owner/name' with optional parsed branch."""
+
+    branch: Optional[str] = None
+
+    def __new__(cls, value: str, branch: Optional[str] = None):
+        obj = super().__new__(cls, value)
+        obj.branch = branch
+        return obj
+
+
+def parse_repo_branch(repo_url: str) -> Optional[str]:
+    """Extracts the branch/ref from a GitHub URL containing '/tree/<branch>' if present."""
+    url = repo_url.strip()
+    if "//" not in url:
+        url = f"https://{url}"
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return None
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) >= 4 and parts[2] == "tree":
+        return "/".join(parts[3:])
+    return None
+
+
+def parse_repo_slug(repo_url: str) -> RepoSlug:
+    """Extracts 'owner/name' from a GitHub URL or bare ``owner/name`` slug.
+
+    If the URL contains ``/tree/<branch>``, the extracted branch is attached
+    to the returned ``RepoSlug`` as ``.branch`` and can also be queried with
+    :func:`parse_repo_branch`.
+    """
     url = repo_url.strip()
     if "//" not in url:
         # bare owner/name (or github.com/owner/name) — normalize with a scheme
         if "/" not in url:
             raise SnapshotError(f"cannot parse owner/name from: {repo_url!r}")
         if url.count("/") == 1 and "." not in url.split("/")[0]:
-            return url
+            return RepoSlug(url, branch=None)
         url = f"https://{url}"
     parsed = urlparse(url)
     if parsed.hostname not in ("github.com", "www.github.com"):
@@ -61,7 +92,8 @@ def parse_repo_slug(repo_url: str) -> str:
     owner, name = parts[0], parts[1]
     if name.endswith(".git"):
         name = name[:-4]
-    return f"{owner}/{name}"
+    branch = "/".join(parts[3:]) if len(parts) >= 4 and parts[2] == "tree" else None
+    return RepoSlug(f"{owner}/{name}", branch=branch)
 
 
 class SnapshotClient:
@@ -72,9 +104,11 @@ class SnapshotClient:
         api_base: str = DEFAULT_API,
         session: Optional[HttpSession] = None,
         token: Optional[str] = None,
+        timeout_seconds: float = 60.0,
     ) -> None:
         self.api_base = api_base.rstrip("/")
         self.token = token
+        self.timeout_seconds = float(timeout_seconds)
         if session is None:
             import requests
 
@@ -91,7 +125,7 @@ class SnapshotClient:
     def _get(self, url: str, accept: str):
         response = self.session.get(
             url,
-            timeout=60.0,
+            timeout=self.timeout_seconds,
             allow_redirects=True,
             headers=self._headers(accept),
         )
@@ -124,6 +158,8 @@ class SnapshotClient:
         before anything reads it.
         """
         slug = parse_repo_slug(repo_url)
+        if not ref and getattr(slug, "branch", None):
+            ref = slug.branch
         sha = self.resolve_commit(slug, ref=ref)
         dest_dir = Path(dest_dir or ".agentpoi_scan")
         dest_dir.mkdir(parents=True, exist_ok=True)

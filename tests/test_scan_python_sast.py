@@ -57,3 +57,33 @@ def test_parse_only_never_imports_snapshot(tmp_path):
     ctx = _ctx(tmp_path, {"boom_module.py": "import sys\nsys.exit(9)\nimport os\nbomb\n"})
     result = PythonSastScanner().run(ctx)  # must not execute; syntax error finding OK
     assert result.scanner == "python_sast"
+
+
+def test_exact_ast_line_attribution(tmp_path):
+    code = (
+        "import os\n"       # line 1
+        "import requests\n" # line 2
+        "def benign():\n"   # line 3
+        "    pass\n"        # line 4
+        "def evil():\n"     # line 5
+        "    os.system('id')\n"  # line 6
+    )
+    ctx = _ctx(tmp_path, {"src/app.py": code})
+    result = PythonSastScanner().run(ctx)
+    exec_findings = [f for f in result.findings if f.title == "prohibited execution call"]
+    assert len(exec_findings) == 1
+    assert 6 in exec_findings[0].lines
+    assert exec_findings[0].lines[0] == 6
+
+
+def test_benign_imports_not_flagged(tmp_path):
+    code = (
+        "import requests\n"
+        "import socket\n"
+        "def get_version():\n"
+        "    return '1.0'\n"
+    )
+    ctx = _ctx(tmp_path, {"src/clean_imports.py": code})
+    result = PythonSastScanner().run(ctx)
+    assert len(result.findings) == 0
+

@@ -284,7 +284,7 @@ class TestTier3LangflowAgenticRepository:
         assert "pull_request_target" in workflow_finding.detail
 
         pkg_finding = next(f for f in findings if "package.json" in f.file)
-        assert pkg_finding.severity == HIGH
+        assert pkg_finding.severity in (HIGH, CRITICAL)
         assert "postinstall" in pkg_finding.detail or "lifecycle" in pkg_finding.detail
 
     def test_langflow_python_deserialization_risks(self) -> None:

@@ -23,6 +23,23 @@ BIDI_CONTROL = frozenset(
 )
 ZERO_WIDTH = frozenset("\u200b\u200c\u200d\u2060\ufeff")
 BIDI_CHARS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+_IGNORED_NFKC_CHARS = frozenset("™©®µ½¼¾²³‘’“”–—•…§¶†‡")
+_IGNORED_NFKC_CATEGORIES = frozenset({"Po", "Pd", "Ps", "Pe", "Pi", "Pf", "Sm", "Sc", "Sk", "So"})
+
+
+def _is_nfkc_homoglyph(ch: str, normal: str) -> bool:
+    if normal == ch or not (normal.isprintable() and ch.isprintable()):
+        return False
+    if ch in _IGNORED_NFKC_CHARS:
+        return False
+    cat = unicodedata.category(ch)
+    if cat in _IGNORED_NFKC_CATEGORIES:
+        return False
+    if ch.isidentifier() and normal.isidentifier():
+        return True
+    if cat.startswith(("L", "N")) and normal.isascii():
+        return True
+    return False
 
 
 def _classify_char(ch: str) -> str:
@@ -53,7 +70,7 @@ class UnicodeTrojanScanner:
                     if kind:
                         kinds.append(kind)
                     normal = unicodedata.normalize("NFKC", ch)
-                    if normal != ch and normal.isprintable() and ch.isprintable():
+                    if _is_nfkc_homoglyph(ch, normal):
                         kinds.append("nfkc-mismatch")
                 unique = sorted(set(kinds))
                 if unique:

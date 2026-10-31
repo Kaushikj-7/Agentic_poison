@@ -26,6 +26,10 @@ workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if workspace_root not in sys.path:
     sys.path.insert(0, workspace_root)
 
+# Set git configuration isolation for sandboxed runners
+os.environ["GIT_CONFIG_GLOBAL"] = os.devnull
+os.environ["GIT_CONFIG_NOSYSTEM"] = "1"
+
 
 def check_syntax() -> Tuple[bool, int]:
     """Compile and parse all python files in agent_poi, agentpoi_sde, agentpoi_scan, and tests to catch syntax errors."""
@@ -223,8 +227,10 @@ def check_code_principles() -> Tuple[bool, str]:
     auditor = CodePrinciplesAuditor()
     report_poi = auditor.audit_directory("agent_poi")
     report_sde = auditor.audit_directory("agentpoi_sde")
+    report_scan = auditor.audit_directory("agentpoi_scan") if os.path.isdir("agentpoi_scan") else None
 
     crit_poi = report_poi.critical_violations
+    crit_scan = report_scan.critical_violations if report_scan else 0
     crit_sde = sum(
         1 for r in report_sde.file_reports
         for v in r.violations
@@ -232,7 +238,7 @@ def check_code_principles() -> Tuple[bool, str]:
             "attack_generator" in r.filepath and "{fake_key}" in v.message
         )
     )
-    total_critical = crit_poi + crit_sde
+    total_critical = crit_poi + crit_sde + crit_scan
 
     oracle = AntiCheatOracle()
     hash_violations = []

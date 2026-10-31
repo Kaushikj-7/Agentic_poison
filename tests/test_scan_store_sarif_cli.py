@@ -88,3 +88,13 @@ def test_cli_validate_ok_and_fail(tmp_path):
     )
     ok = _run_cli("validate", "scan_registry", cwd=tmp_path)
     assert "REGISTRY: OK" in ok.stdout and ok.returncode == 0
+
+
+def test_cli_sarif_derived_from_workdir(tmp_path):
+    repo_dir = tmp_path / "fake_repo"
+    repo_dir.mkdir()
+    (repo_dir / "clean.py").write_text("x = 1\n", encoding="utf-8")
+    workdir = tmp_path / "custom_work"
+    res = _run_cli("run", str(repo_dir), "--offline", "--workdir", str(workdir), cwd=tmp_path)
+    assert res.returncode == 0
+    assert (workdir / "findings.sarif").is_file()

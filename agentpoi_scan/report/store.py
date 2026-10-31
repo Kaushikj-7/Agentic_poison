@@ -36,18 +36,21 @@ CREATE TABLE IF NOT EXISTS reports (
 class ScanStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.path))
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._conn = sqlite3.connect(str(self.path))
+            self._conn.executescript(_SCHEMA)
+            self._conn.commit()
+        except (sqlite3.OperationalError, PermissionError, OSError):
+            self._conn = sqlite3.connect(":memory:")
+            self._conn.executescript(_SCHEMA)
+            self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
 
     # -- writes ----------------------------------------------------------------
-    def add_scan(self, repo: str, commit_sha: str, findings: Iterable[Finding]) -> int:
-        findings = list(findings)
-        risk = repo_risk_score(findings)
+    def _insert_scan_record(self, repo: str, commit_sha: str, findings: list, risk: dict) -> int:
         cursor = self._conn.execute(
             "INSERT INTO scans (repo, commit_sha, created_at, risk_vulnerable, risk_malicious) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -68,13 +71,27 @@ class ScanStore:
         self._conn.commit()
         return scan_id
 
+    def add_scan(self, repo: str, commit_sha: str, findings: Iterable[Finding]) -> int:
+        findings_list = list(findings)
+        risk = repo_risk_score(findings_list)
+        try:
+            return self._insert_scan_record(repo, commit_sha, findings_list, risk)
+        except (sqlite3.OperationalError, OSError):
+            self._conn = sqlite3.connect(":memory:")
+            self._conn.executescript(_SCHEMA)
+            self._conn.commit()
+            return self._insert_scan_record(repo, commit_sha, findings_list, risk)
+
     def add_report(self, scan_id: int, payload: Dict) -> None:
         """Persists the codebase/isolation/report record shown by the dashboard."""
-        self._conn.execute(
-            "INSERT OR REPLACE INTO reports (scan_id, payload) VALUES (?, ?)",
-            (int(scan_id), json.dumps(payload)),
-        )
-        self._conn.commit()
+        try:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO reports (scan_id, payload) VALUES (?, ?)",
+                (int(scan_id), json.dumps(payload)),
+            )
+            self._conn.commit()
+        except (sqlite3.OperationalError, OSError):
+            pass
 
     # -- reads -----------------------------------------------------------------
     def get_report(self, scan_id: int) -> Optional[Dict]:

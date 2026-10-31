@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import threading
 import time
 from typing import Any, Dict, Optional, Tuple
@@ -102,35 +101,17 @@ class TieredProviders:
         return None
 
 
-class RateLimitedProvider:
-    """Enforces free-tier request limits around an OpenRouter provider, fail-closed.
-
-    OpenRouter's ``:free`` models allow ~20 requests/minute and a small daily
-    quota. Two hard caps are enforced locally before any request leaves the
-    machine:
-    - ``requests_per_minute``: a rolling 60s window; when exhausted, the next
-      request sleeps once for the remainder and that request opens the new
-      window. If the wait exceeds ``max_backoff_seconds`` the call refuses
-      instead (RuntimeError → ``complete_json`` returns None) — it never waits
-      indefinitely.
-    - ``max_requests_per_scan``: once the total cap is hit, ``is_available``
-      turns False and every further call degrades to None (fail-closed).
-
-    Availability also delegates to the wrapped provider (which rejects
-    wrong-shaped keys before any request is spent); providers without an
-    ``is_available`` attribute (test doubles) count as available.
-    """
+class GlobalRateLimiter:
+    """Thread-safe rate limiter tracking RPM and per-scan budget across shared tiers."""
 
     def __init__(
         self,
-        provider: Any,
         requests_per_minute: int = 15,
-        max_requests_per_scan: int = 40,
+        max_requests_per_scan: int = 45,
         max_backoff_seconds: float = 60.0,
         _sleep: Any = time.sleep,
         _now: Any = time.monotonic,
     ) -> None:
-        self.provider = provider
         self.requests_per_minute = int(requests_per_minute)
         self.max_requests_per_scan = int(max_requests_per_scan)
         self.max_backoff_seconds = float(max_backoff_seconds)
@@ -142,7 +123,61 @@ class RateLimitedProvider:
         self._total = 0
 
     def is_available(self) -> bool:
+        with self._lock:
+            return self._total < self.max_requests_per_scan
+
+    def acquire(self) -> None:
+        wait: float = 0.0
+        with self._lock:
+            if self._total >= self.max_requests_per_scan:
+                raise RuntimeError("free-tier request cap for this scan exhausted")
+            now = self._now()
+            if now - self._window_start >= 60.0:
+                self._window_start = now
+                self._window_count = 0
+            if self._window_count >= self.requests_per_minute:
+                remainder = 60.0 - (now - self._window_start)
+                if remainder > self.max_backoff_seconds:
+                    raise RuntimeError("rate window exhausted beyond backoff budget")
+                wait = max(remainder, 0.0)
+            self._window_count += 1
+            self._total += 1
+        if wait > 0.0:
+            self._sleep(wait)
+            with self._lock:
+                self._window_start = self._now()
+                self._window_count = 1
+
+
+class RateLimitedProvider:
+    """Enforces free-tier request limits around an OpenRouter provider, fail-closed."""
+
+    def __init__(
+        self,
+        provider: Any,
+        requests_per_minute: int = 15,
+        max_requests_per_scan: int = 40,
+        max_backoff_seconds: float = 60.0,
+        _sleep: Any = time.sleep,
+        _now: Any = time.monotonic,
+        shared_limiter: Optional[GlobalRateLimiter] = None,
+    ) -> None:
+        self.provider = provider
+        self.requests_per_minute = int(requests_per_minute)
+        self.max_requests_per_scan = int(max_requests_per_scan)
+        self.max_backoff_seconds = float(max_backoff_seconds)
+        self._sleep = _sleep
+        self._now = _now
+        self._lock = threading.Lock()
+        self._window_start = self._now()
+        self._window_count = 0
+        self._total = 0
+        self.shared_limiter = shared_limiter
+
+    def is_available(self) -> bool:
         if self._total >= self.max_requests_per_scan:
+            return False
+        if self.shared_limiter is not None and not self.shared_limiter.is_available():
             return False
         checker = getattr(self.provider, "is_available", None)
         if not callable(checker):
@@ -174,30 +209,35 @@ class RateLimitedProvider:
                 # this request opens the new window, so rebase the count here
                 self._window_start = self._now()
                 self._window_count = 1
+        if self.shared_limiter is not None:
+            self.shared_limiter.acquire()
         return self.provider.generate(prompt, system_prompt=system_prompt)
-
-
-_JSON_OBJ_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def extract_json(text: str) -> Optional[Dict[str, Any]]:
     """Extracts the first JSON object embedded in model output."""
     if not text:
         return None
+    stripped = text.strip()
     try:
-        parsed = json.loads(text)
+        parsed = json.loads(stripped)
         if isinstance(parsed, dict):
             return parsed
     except ValueError:
         pass
-    match = _JSON_OBJ_RE.search(text)
-    if match:
+    decoder = json.JSONDecoder()
+    idx = 0
+    while True:
+        pos = stripped.find("{", idx)
+        if pos == -1:
+            break
         try:
-            parsed = json.loads(match.group(0))
+            parsed, _ = decoder.raw_decode(stripped, pos)
             if isinstance(parsed, dict):
                 return parsed
         except ValueError:
-            return None
+            pass
+        idx = pos + 1
     return None
 
 
@@ -230,6 +270,11 @@ def build_default_providers(config: Dict[str, Any]) -> Tuple[TieredProviders, Di
         return TieredProviders({}), {"all": "privacy.local_only enabled (100% offline CPU)"}
     limits = config.get("limits") or {}
     tier_caps = limits.get("tier_caps") or limits.get("tiers") or {}
+    global_limiter = GlobalRateLimiter(
+        requests_per_minute=int(limits.get("requests_per_minute", 15)),
+        max_requests_per_scan=int(limits.get("max_requests_per_scan", 45)),
+        max_backoff_seconds=float(limits.get("max_backoff_seconds", 60.0)),
+    )
 
     for tier_name in ("local", "frontier", "verifier"):
         tier_cfg = (config.get("tiers") or {}).get(tier_name) or {}
@@ -255,30 +300,20 @@ def build_default_providers(config: Dict[str, Any]) -> Tuple[TieredProviders, Di
                     model = DEFAULT_FREE_MODELS.get(tier_name)
 
                 provider_inst = OpenRouterProvider(api_key=key, model=model)
-
+                tier_max = DEFAULT_TIER_CAPS.get(tier_name, 15)
                 if isinstance(tier_caps.get(tier_name), dict):
-                    tier_max = tier_caps[tier_name].get(
-                        "max_requests_per_scan", DEFAULT_TIER_CAPS.get(tier_name, 15)
-                    )
-                    tier_rpm = tier_caps[tier_name].get(
-                        "requests_per_minute", limits.get("requests_per_minute", 15)
-                    )
+                    tier_max = tier_caps[tier_name].get("max_requests_per_scan", tier_max)
                 elif isinstance(tier_caps.get(tier_name), int):
                     tier_max = tier_caps[tier_name]
-                    tier_rpm = limits.get("requests_per_minute", 15)
-                else:
-                    if tier_name == "frontier" and "max_requests_per_scan" in limits:
-                        tier_max = limits["max_requests_per_scan"]
-                    else:
-                        tier_max = DEFAULT_TIER_CAPS.get(tier_name, 15)
-                    tier_rpm = limits.get("requests_per_minute", 15)
+                elif tier_name == "frontier" and "max_requests_per_scan" in limits and not tier_caps:
+                    tier_max = limits["max_requests_per_scan"]
 
-                max_backoff = float(limits.get("max_backoff_seconds", 60.0))
                 providers[tier_name] = RateLimitedProvider(
                     provider_inst,
-                    requests_per_minute=tier_rpm,
+                    requests_per_minute=int(limits.get("requests_per_minute", 15)),
                     max_requests_per_scan=tier_max,
-                    max_backoff_seconds=max_backoff,
+                    max_backoff_seconds=float(limits.get("max_backoff_seconds", 60.0)),
+                    shared_limiter=global_limiter,
                 )
             else:
                 unavailable[tier_name] = "OPENROUTER_API_KEY not set"

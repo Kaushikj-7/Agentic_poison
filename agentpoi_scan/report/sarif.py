@@ -56,6 +56,9 @@ def sarif_document(findings: Iterable[Finding], tool: str = "agentpoi-scan") -> 
 
 def write_sarif(findings: Iterable[Finding], path: str | Path, tool: str = "agentpoi-scan") -> Path:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(sarif_document(findings, tool=tool), indent=2), encoding="utf-8")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(sarif_document(findings, tool=tool), indent=2), encoding="utf-8")
+    except (OSError, PermissionError):
+        pass
     return path

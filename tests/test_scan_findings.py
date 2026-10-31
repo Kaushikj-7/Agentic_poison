@@ -91,3 +91,14 @@ def test_risk_score_weighted_max_not_mean():
 def test_clean_repo_zero_risk():
     findings = [_finding(vulnerability=0.0, maliciousness=0.0) for _ in range(10)]
     assert repo_risk_score(findings) == {"vulnerable": 0.0, "malicious": 0.0}
+
+
+def test_refuted_findings_risk_score():
+    # non-authoritative refuted finding does not contribute to risk
+    refuted_med = _finding(severity="medium", vulnerability=0.8, status="refuted")
+    assert repo_risk_score([refuted_med]) == {"vulnerable": 0.0, "malicious": 0.0}
+
+    # authoritative (high/critical) finding stays in risk even if marked refuted (cannot be silenced)
+    refuted_high = _finding(severity="high", vulnerability=0.8, status="refuted")
+    assert repo_risk_score([refuted_high])["vulnerable"] > 0.0
+

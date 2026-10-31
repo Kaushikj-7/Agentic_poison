@@ -11,7 +11,7 @@ from pathlib import Path
 
 from agentpoi_scan.agents.llm_bridge import TieredProviders
 from agentpoi_scan.fetch.safe_extract import extract_snapshot
-from agentpoi_scan.findings.model import dedupe, is_authoritative
+from agentpoi_scan.findings.model import Finding, dedupe, is_authoritative
 from agentpoi_scan.findings.risk_score import repo_risk_score
 from agentpoi_scan.pipeline import ScanPipeline
 from agentpoi_scan.scan.base import ScanContext
@@ -149,3 +149,54 @@ def test_pipeline_accepts_file_path_config(tmp_path):
     assert pipeline2.cfg.get("router", {}).get("budget_usd_per_repo") == 5.0
     pipeline.store.close()
     pipeline2.store.close()
+
+
+def test_local_snapshot_ignores_venv_temp_and_git(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("print('hello')", encoding="utf-8")
+    (tmp_path / ".venv" / "Lib").mkdir(parents=True)
+    (tmp_path / ".venv" / "Lib" / "site.py").write_text("# site", encoding="utf-8")
+    (tmp_path / "temp" / "sub").mkdir(parents=True)
+    (tmp_path / "temp" / "sub" / "scratch.py").write_text("# scratch", encoding="utf-8")
+    (tmp_path / "tmp" / "cached").mkdir(parents=True)
+    (tmp_path / "tmp" / "cached" / "data.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main", encoding="utf-8")
+
+    _, _, _, manifest = ScanPipeline._local_snapshot(tmp_path)
+    assert "src/app.py" in manifest.files
+    assert not any(f.startswith((".venv/", "temp/", "tmp/", ".git/")) for f in manifest.files)
+
+
+def test_refine_verifier_agreement_and_disagreement(tmp_path):
+    import json
+    pipeline, snapshot_dir, manifest = _build_pipeline(tmp_path, None)
+
+    class FixedProvider:
+        def __init__(self, data):
+            self.data = data
+        def is_available(self):
+            return True
+        def generate(self, prompt, system_prompt=None):
+            return {"content": json.dumps(self.data)}
+
+    # Case 1: verifier disagrees -> human_review
+    providers_disagree = TieredProviders({
+        "local": FixedProvider({"verdict": True, "confidence": 0.9, "reason": "issue", "escalate": True}),
+        "frontier": FixedProvider({"exploitability": 0.9, "intent": "malicious", "confidence": 0.9, "rationale": "exploit"}),
+        "verifier": FixedProvider({"agree": False, "objections": ["false positive"]}),
+    })
+    findings = [Finding(file="clean.py", lines=[1], category="sast", severity="high", title="eval", detail="eval", scanner="python_sast", commit_sha="", source="scanner", confidence=0.8, maliciousness=0.5, vulnerability=0.5, status="open", evidence=[], model_trail=[], snippet="")]
+    report = pipeline.refine(findings, snapshot_dir, providers_disagree)
+    assert report.findings[0].status == "human_review"
+
+    # Case 2: verifier agrees -> confirmed
+    providers_agree = TieredProviders({
+        "local": FixedProvider({"verdict": True, "confidence": 0.9, "reason": "issue", "escalate": True}),
+        "frontier": FixedProvider({"exploitability": 0.9, "intent": "malicious", "confidence": 0.9, "rationale": "exploit"}),
+        "verifier": FixedProvider({"agree": True, "objections": []}),
+    })
+    findings2 = [Finding(file="clean.py", lines=[1], category="sast", severity="high", title="eval", detail="eval", scanner="python_sast", commit_sha="", source="scanner", confidence=0.8, maliciousness=0.5, vulnerability=0.5, status="open", evidence=[], model_trail=[], snippet="")]
+    report2 = pipeline.refine(findings2, snapshot_dir, providers_agree)
+    assert report2.findings[0].status == "confirmed"
+

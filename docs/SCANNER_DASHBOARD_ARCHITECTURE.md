@@ -33,7 +33,7 @@ flowchart TD
         D1 --> E["Raw Finding Aggregator"]
         D2 --> E
         D3 --> E
-        E --> F["Two-Axis Risk Scorecard\n(Vulnerability Score & Maliciousness Score)"]
+        E --> F["Two-Axis Risk Scorecard\n(Vulnerability Score [0.0-1.0] & Maliciousness Score [0.0-1.0])"]
     end
 
     subgraph LLMBridge ["4. Advisory Multi-Tier LLM Bridge (OpenRouter Free Cascade)"]
@@ -99,15 +99,15 @@ AgentPOI-Scan orchestrates an advisory multi-tier LLM bridge leveraging OpenRout
 Traditional vulnerability scanners average finding severities across repository file counts. This creates a severe structural vulnerability: an attacker can inject a critical webshell backdoor into a 10,000-file repository, resulting in an average score near 0.0 ("Safe").
 
 AgentPOI-Scan enforces **DEC-106 Two-Axis Severity-Weighted Maximum Scoring**:
-$$\text{Vulnerability Score} = \max_{f \in \mathcal{F}_{\text{vuln}}} \text{Weight}(f.\text{severity}) \quad \in [0.0, 10.0]$$
-$$\text{Maliciousness Score} = \max_{f \in \mathcal{F}_{\text{malware}}} f.\text{maliciousness} \quad \in [0.0, 1.0]$$
+$$\text{Vulnerability Score} = \max_{f \in \mathcal{F}_{\text{vuln}}} \text{Weight}(f.\text{severity}) \cdot f.\text{vulnerability} \quad \in [0.0, 1.0]$$
+$$\text{Maliciousness Score} = \max_{f \in \mathcal{F}_{\text{malware}}} \text{Weight}(f.\text{severity}) \cdot f.\text{maliciousness} \quad \in [0.0, 1.0]$$
 
-| Severity | Vulnerability Weight | Maliciousness Base |
-| :--- | :---: | :---: |
-| **CRITICAL** | 10.0 | 0.95 – 1.00 |
-| **HIGH** | 7.5 | 0.80 – 0.90 |
-| **MEDIUM** | 5.0 | 0.50 – 0.70 |
-| **LOW** | 2.5 | 0.20 – 0.40 |
+| Severity | Weight | Scorecard Impact |
+| :--- | :---: | :--- |
+| **CRITICAL** | **1.0** | A single critical webshell guarantees repository risk $\ge 0.95$ |
+| **HIGH** | **0.9** | Significant exploit surface detected |
+| **MEDIUM** | **0.6** | Suspicious configuration or moderate risk |
+| **LOW** | **0.3** | Informational or low-impact signal |
 
 A single Critical webshell backdoor guarantees a repository-level Maliciousness Score of `0.95+`, regardless of repository size.
 

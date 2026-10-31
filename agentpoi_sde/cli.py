@@ -120,6 +120,12 @@ def _add_run_subparser(subparsers: argparse._SubParsersAction) -> None:
         help="Output verification report as JSON",
     )
     p_run.add_argument(
+        "--allow",
+        action="append",
+        default=None,
+        help="Allowed path pattern (can be specified multiple times)",
+    )
+    p_run.add_argument(
         "-o",
         "--output",
         default=None,
@@ -502,7 +508,7 @@ def handle_run(args: argparse.Namespace) -> int:
             model=args.model,
             api_key=args.api_key,
         )
-        report = runner.run(task_goal)
+        report = runner.run(task_goal, allowed_paths=args.allow)
     except Exception as exc:
         sys.stderr.write(f"Error executing autonomous runner: {exc}\n")
         return 2

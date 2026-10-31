@@ -49,6 +49,7 @@ class FinancialAgent:
         enable_civ_firewall: bool = True,
         raise_on_violation: bool = False,
         max_divergence_risk: Optional[float] = None,
+        monitor_only: bool = False,
     ):
         self.logger = get_financial_logger("agent_poi.financial.agent")
         self.anchor = state_anchor or FinancialStateAnchor()
@@ -66,6 +67,7 @@ class FinancialAgent:
         self.auth_graph = AuthGraphDAG()
         self.enable_civ = enable_civ_firewall
         self.raise_on_violation = raise_on_violation
+        self.monitor_only = monitor_only
 
         # Seed authenticated root nodes in AuthGraph for all verified payees in S0
         for payee_acc, payee in self.anchor.verified_payees.items():
@@ -200,7 +202,9 @@ class FinancialAgent:
         is_valid, violations = self._validate_sink_invariants(
             to_account, amount, claimed_auth, contributing_node_ids, capability_token_id=capability_token_id
         )
-        if not is_valid and self.enable_civ:
+        if not is_valid and (self.enable_civ or self.monitor_only):
+            if self.monitor_only:
+                return self._handle_blocked_disbursement(to_account, amount, invoice_id, violations)
             if self.raise_on_violation:
                 if not self.anchor.is_payee_verified(to_account):
                     raise UnauthorizedPayeeError(to_account, details={"violations": violations})
@@ -247,6 +251,14 @@ class FinancialAgent:
 
         context_admitted = ts_eval["admitted"] and civ_res.is_admitted
         context_decision = civ_res.decision if ts_eval["admitted"] else "QUARANTINED"
+        if not bool(self.task_shield.query_pattern.search(task_query)):
+            delta = self.delta_extractor.extract(retrieved_context)
+            if delta.target_account or (delta.amount and delta.amount > 0):
+                violations.append(
+                    "ACTION SUBSUMPTION VIOLATION: Read-only query does not authorize disbursement execution."
+                )
+                context_admitted = False
+                context_decision = "QUARANTINED"
         return context_admitted, context_decision, violations, ts_eval["task_alignment_score"]
 
     def _resolve_contributing_nodes(

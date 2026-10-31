@@ -126,6 +126,12 @@ def extract_snapshot(
                 # Top-level directory entry of a GitHub tarball (repo-sha/).
                 continue
             rel = _check_member_name(stripped, max_depth=max_depth)
+            pure_rel = PurePosixPath(rel)
+            if pure_rel.name == ".gitmodules" or any(
+                p == ".git" or (p.startswith(".git") and p != ".github") for p in pure_rel.parts
+            ):
+                manifest.skipped.append((rel, "prohibited git metadata entry"))
+                continue
             if not member.isfile():
                 reason = {tarfile.SYMTYPE: "symlink"}.get(
                     member.type, "non-regular file"

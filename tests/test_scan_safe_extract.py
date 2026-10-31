@@ -116,3 +116,20 @@ def test_binary_candidates_classification(tmp_path):
     manifest = extract_snapshot(mixed, tmp_path)
     assert manifest.binary_candidates == ["lib.so", "payload.exe"]
     assert "app.py" in manifest.text_files
+
+
+def test_git_entries_and_gitmodules_skipped(tmp_path):
+    tar = _tar([
+        ("repo-x/src/app.py", "x = 1\n"),
+        ("repo-x/.gitmodules", "[submodule \"lib\"]\n  path = lib\n"),
+        ("repo-x/.git/config", "[core]\n"),
+        ("repo-x/.github/workflows/ci.yml", "name: CI\n"),
+    ])
+    manifest = extract_snapshot(tar, tmp_path)
+    assert "src/app.py" in manifest.files
+    assert ".github/workflows/ci.yml" in manifest.files
+    assert ".gitmodules" not in manifest.files
+    assert not any(f.startswith(".git/") for f in manifest.files)
+    assert not (tmp_path / ".gitmodules").exists()
+    assert not (tmp_path / ".git").exists()
+

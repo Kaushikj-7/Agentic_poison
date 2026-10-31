@@ -27,7 +27,7 @@ class TaskShieldGate:
     ]
 
     QUERY_ACTION_TRIGGERS = [
-        r"\b(?:pay|payment|process|disburse|disbursement|wire|transfer|remit|remittance|settle|settlement|execute|delete|purge)\b",
+        r"\b(?:pay|payment|process|disburse|disbursement|wire|transfer|remit|remittance|settle|settlement|execute|delete|purge|apply|credit|fund|funding|invoice)\b",
     ]
 
     def __init__(self, relevance_threshold: float = 0.0, max_divergence_risk: float = 0.35):

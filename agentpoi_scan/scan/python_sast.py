@@ -39,7 +39,8 @@ class PythonSastScanner:
             source_lines = code.splitlines()
             for violation in result.violations:
                 severity, malicious, vuln = self._classify(violation)
-                line_no = self._locate_line(code, violation)
+                lines = self._resolve_lines(code, violation, result.dangerous_call_lines)
+                line_no = lines[0] if lines else 1
                 snippet = (
                     source_lines[line_no - 1].strip()[:300]
                     if 0 < line_no <= len(source_lines)
@@ -48,7 +49,7 @@ class PythonSastScanner:
                 findings.append(
                     Finding(
                         file=relpath,
-                        lines=[line_no],
+                        lines=lines,
                         snippet=snippet,
                         category=self._category(violation),
                         severity=severity,
@@ -66,6 +67,15 @@ class PythonSastScanner:
         return ScanResult(scanner=SCANNER_NAME, findings=findings)
 
     # -- helpers ---------------------------------------------------------------
+    @classmethod
+    def _resolve_lines(
+        cls, code: str, violation: str, dangerous_call_lines: list[tuple[str, int]]
+    ) -> list[int]:
+        if "prohibited execution call" in violation.lower() and dangerous_call_lines:
+            lines = sorted({lineno for _, lineno in dangerous_call_lines if lineno > 0})
+            if lines:
+                return lines
+        return [cls._locate_line(code, violation)]
     @staticmethod
     def _classify(violation: str) -> tuple:
         lowered = violation.lower()

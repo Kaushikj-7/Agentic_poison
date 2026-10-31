@@ -96,6 +96,23 @@ class IntentContract:
                 return True
         return False
 
+    def permits_policy_file(self, path: str) -> bool:
+        """Return True only when allowed_paths explicitly targets the policy file or directory."""
+        from fnmatch import fnmatch
+
+        norm = path.replace("\\", "/").lstrip("./")
+        for pattern in self.allowed_paths:
+            pat = pattern.replace("\\", "/").lstrip("./")
+            if pat in ("*", "**", "*.*", "./*", "./**"):
+                continue
+            if pat.startswith("*") or pat.startswith("?"):
+                continue
+            if pat.endswith("/"):
+                pat = pat + "*"
+            if fnmatch(norm, pat) or norm == pat:
+                return True
+        return False
+
 
 @dataclass(frozen=True)
 class DesignDecision:

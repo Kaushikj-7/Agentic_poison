@@ -12,7 +12,7 @@ from typing import Optional, Tuple
 
 from agentpoi_scan.agents.context_server import SYSTEM_PREFIX, finding_snippet
 from agentpoi_scan.agents.llm_bridge import TieredProviders
-from agentpoi_scan.findings.model import Finding, is_authoritative
+from agentpoi_scan.findings.model import Finding
 from agentpoi_scan.scan.base import ScanContext
 
 ANALYST_SYSTEM = (
@@ -73,10 +73,7 @@ class AnalystAgent:
         if not verdict.get("verdict_cleared_attempted"):
             # An analyst never sets status to confirmed on its own word alone;
             # that happens only after verifier agreement in the pipeline.
-            if intent == "malicious" and is_authoritative(finding.severity):
-                finding.status = "confirmed"
-            else:
-                finding.status = finding.status if finding.status != "open" else "triaged"
+            finding.status = "escalated" if finding.status == "escalated" else "triaged"
         return verdict, finding
 
     def _prompt(self, context: ScanContext, finding: Finding) -> str:

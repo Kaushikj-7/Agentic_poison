@@ -8,6 +8,7 @@ path/content-regex based; nothing is executed to inspect them.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import PurePosixPath
 
 from agentpoi_scan.findings.model import Finding
@@ -26,13 +27,94 @@ AUTORUN_FILES = {
 
 LIFECYCLE_SCRIPTS = ("preinstall", "postinstall", "prepare", "prepack", "postpack")
 
-SUSPICIOUS_PATTERNS = (
-    ("curl", "curl|sh pipe pattern"),
-    ("wget", "wget pipe pattern"),
-    ("curl http", "curl download pattern"),
-    ("Invoke-WebRequest", "powershell download pattern"),
-    ("curl -fsSL", "curl-to-shell pattern"),
+COMPILED_SUSPICIOUS_PATTERNS = (
+    (
+        re.compile(r"(?:curl|wget)[^\n|]*\|\s*(?:ba|z|da)?sh", re.IGNORECASE),
+        "curl/wget pipe-to-shell pattern",
+    ),
+    (
+        re.compile(
+            r"(?:Invoke-WebRequest|iwr)[^\n|]*\|\s*(?:iex|Invoke-Expression)",
+            re.IGNORECASE,
+        ),
+        "powershell download-and-execute pattern",
+    ),
+    (
+        re.compile(
+            r"(?:curl|wget)\s+-(?:[a-zA-Z]*s[a-zA-Z]*\s+)?https?://",
+            re.IGNORECASE,
+        ),
+        "remote payload download pattern",
+    ),
 )
+
+
+def _match_flagged_patterns(text: str) -> list[str]:
+    matches: list[str] = []
+    for pattern, label in COMPILED_SUSPICIOUS_PATTERNS:
+        if pattern.search(text):
+            matches.append(label)
+    return sorted(set(matches))
+
+
+def _eval_package_json(text: str, flagged: list[str]) -> tuple[bool, str, list[str]]:
+    extra: list[str] = []
+    try:
+        scripts = (json.loads(text) or {}).get("scripts", {}) or {}
+        suspicious = [s for s in scripts if str(s).lower() in LIFECYCLE_SCRIPTS]
+        if suspicious:
+            extra.append(f"npm lifecycle scripts: {', '.join(suspicious)}")
+    except (ValueError, AttributeError):
+        extra.append("package.json not valid JSON")
+        suspicious = ["invalid_json"]
+
+    if not suspicious and not flagged:
+        return False, "low", []
+
+    severity = "critical" if (suspicious and flagged) else "high"
+    return True, severity, extra
+
+
+def _eval_autorun_target(
+    relpath: str, basename: str, target: list[str], text: str
+) -> tuple[bool, str, str, list[str], list[str]]:
+    """Evaluates whether relpath should emit an autorun finding."""
+    is_wf = (
+        len(target) >= 2
+        and tuple(target[:2]) == (".github", "workflows")
+        and relpath.lower().endswith((".yml", ".yaml"))
+    )
+    is_hk = ".husky" in target or PurePosixPath(relpath).parent.name == "hooks"
+    known = basename in AUTORUN_FILES
+
+    if not (known or is_wf or is_hk):
+        return False, "", "", [], []
+
+    lowered = text.lower()
+    flagged = _match_flagged_patterns(text)
+    desc = AUTORUN_FILES.get(basename, ("repository automation file", "medium"))[0]
+
+    if basename == "package.json":
+        emit, sev, pkg_extra = _eval_package_json(text, flagged)
+        return emit, sev, desc, flagged, pkg_extra
+    if basename == "tasks.json":
+        if "folderopen" not in lowered and not flagged:
+            return False, "", "", [], []
+        sev = "high" if flagged else "medium"
+        extra = ["folderOpen task trigger"] if "folderopen" in lowered else []
+        return True, sev, desc, flagged, extra
+    if is_wf:
+        if "pull_request_target" not in lowered and not flagged:
+            return False, "", "", [], []
+        extra = (
+            ["pull_request_target workflow (untrusted-checkout trigger)"]
+            if "pull_request_target" in lowered
+            else []
+        )
+        return True, "high", "workflow automation file", flagged, extra
+
+    sev = "high" if flagged else ("medium" if basename != "setup.cfg" else "low")
+    return True, sev, desc, flagged, []
 
 
 class AutorunSurfaceScanner:
@@ -45,36 +127,18 @@ class AutorunSurfaceScanner:
         for relpath in context.file_index:
             basename = PurePosixPath(relpath).name
             target = relpath.split("/")
-            # .vscode/tasks.json, .github/workflows/*.yml, .husky/*
-            known = basename in AUTORUN_FILES
-            is_workflow = (".github", "workflows") <= tuple(target)
-            is_husky = ".husky" in target or "hooks" == (PurePosixPath(relpath).parent.name)
-            if not (known or is_workflow or is_husky):
-                continue
             text = context.read_text(relpath) or ""
-            severity = AUTORUN_FILES.get(basename, ("source workflow / hook", "medium"))[1]
-            detail_desc = AUTORUN_FILES.get(basename, ("repository automation file", "medium"))[0]
+            emit, severity, detail_desc, flagged, extra = _eval_autorun_target(
+                relpath, basename, target, text
+            )
+            if not emit:
+                continue
 
-            extra = []
-            lowered = text.lower()
-            if basename == "package.json":
-                try:
-                    scripts = (json.loads(text) or {}).get("scripts", {}) or {}
-                    suspicious_lifecycle = [s for s in scripts if str(s).lower() in LIFECYCLE_SCRIPTS]
-                    if suspicious_lifecycle:
-                        extra.append(f"npm lifecycle scripts: {', '.join(suspicious_lifecycle)}")
-                        severity = "high"
-                except (ValueError, AttributeError):
-                    extra.append("package.json not valid JSON")
+            all_extra = list(extra)
+            if flagged:
+                all_extra.append("; ".join(flagged))
 
-            flagged_patterns = [label for needle, label in SUSPICIOUS_PATTERNS if needle in lowered]
-            if flagged_patterns:
-                extra.append("; ".join(sorted(set(flagged_patterns))))
-
-            if is_workflow and any("pull_request_target" in lowerl for lowerl in [text.lower()]):
-                extra.append("pull_request_target workflow (untrusted-checkout trigger)")
-                severity = "high"
-
+            has_suspicious = bool(flagged) or any("lifecycle" in e for e in all_extra)
             findings.append(
                 Finding(
                     file=relpath,
@@ -84,11 +148,11 @@ class AutorunSurfaceScanner:
                     title=f"autorun surface: {detail_desc}",
                     detail=(
                         f"{relpath} executes when the repository is installed/opened/used"
-                        + (f" — {'; '.join(extra)}" if extra else "")
+                        + (f" — {'; '.join(all_extra)}" if all_extra else "")
                     ),
                     scanner=SCANNER_NAME,
                     commit_sha=context.commit_sha,
-                    maliciousness=0.2 if not flagged_patterns and "lifecycle" not in " ".join(extra) else 0.5,
+                    maliciousness=0.5 if has_suspicious else 0.2,
                     vulnerability=0.1,
                     evidence=[{"kind": "scanner_output", "text": relpath}],
                 )

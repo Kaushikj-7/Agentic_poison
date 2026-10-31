@@ -54,7 +54,7 @@ AgentPOI-Scan **inverts the paradigm** into a 100% parse-only, zero-host-executi
 - **Zero Host Execution Guarantee**: Scanned repositories are never built, executed, imported, or installed. Target files are extracted as bounded text bytes via safe tarball extraction or offline directory traversal.
 - **Fail-Closed Parser Invariant (I7)**: Files that fail Python/syntax parsing (`SyntaxError`) are immediately flagged as hostile evasion candidates rather than skipped.
 - **Non-Bypassable DEC-105 Gate**: Authoritative deterministic findings (SQLi, unescaped `exec`, webshell backdoors, insecure deserialization) **cannot be silenced, downgraded, or dismissed** by downstream LLM reasoning (honeypot flip rate = 0.0%).
-- **Non-Diluting Two-Axis Risk Scoring (DEC-106)**: Rather than averaging risk across thousands of clean files, AgentPOI-Scan scores Vulnerability Risk $[0.0, 10.0]$ and Maliciousness Risk $[0.0, 1.0]$ based on maximum finding severity.
+- **Non-Diluting Two-Axis Risk Scoring (DEC-106)**: Rather than averaging risk across thousands of clean files, AgentPOI-Scan scores Vulnerability Risk $[0.0, 1.0]$ and Maliciousness Risk $[0.0, 1.0]$ based on maximum finding severity.
 
 ---
 
@@ -79,7 +79,7 @@ flowchart TD
 
     subgraph Zone2b ["Zone 2b: Raw Finding Aggregator & Risk Scorecard"]
         D1 & D2 & D3 & D4 & D5 --> E["Deduplicated Raw Findings"]
-        E --> F["Two-Axis Risk Scorecard (DEC-106)\n(Vulnerability Score [0-10] & Maliciousness Score [0-1])"]
+        E --> F["Two-Axis Risk Scorecard (DEC-106)\n(Vulnerability Score [0.0-1.0] & Maliciousness Score [0.0-1.0])"]
     end
 
     subgraph Zone3 ["Zone 3: Advisory Multi-Tier LLM Bridge (OpenRouter Free Cascade)"]
@@ -270,16 +270,16 @@ Traditional scanners compute vulnerability scores by calculating the arithmetic 
 
 AgentPOI-Scan implements **DEC-106 Severity-Weighted Maximum Scoring**:
 
-$$\text{Vulnerability Risk} = \max_{f \in \mathcal{F}_{\text{vuln}}} \text{Weight}(f.\text{severity}) \quad \in [0.0, 10.0]$$
+$$\text{Vulnerability Risk} = \max_{f \in \mathcal{F}_{\text{vuln}}} \text{Weight}(f.\text{severity}) \cdot f.\text{vulnerability} \quad \in [0.0, 1.0]$$
 
-$$\text{Maliciousness Risk} = \max_{f \in \mathcal{F}_{\text{malware}}} f.\text{maliciousness} \quad \in [0.0, 1.0]$$
+$$\text{Maliciousness Risk} = \max_{f \in \mathcal{F}_{\text{malware}}} \text{Weight}(f.\text{severity}) \cdot f.\text{maliciousness} \quad \in [0.0, 1.0]$$
 
-| Finding Severity | Vulnerability Weight | Maliciousness Base | Scorecard Impact |
-| :--- | :---: | :---: | :--- |
-| **CRITICAL** | **10.0** | **0.95 – 1.00** | A single critical webshell guarantees repository risk $\ge 0.95$ |
-| **HIGH** | **7.5** | **0.80 – 0.90** | Significant exploit surface detected |
-| **MEDIUM** | **5.0** | **0.50 – 0.70** | Suspicious configuration or moderate risk |
-| **LOW** | **2.5** | **0.20 – 0.40** | Informational or low-impact signal |
+| Finding Severity | Weight | Scorecard Impact |
+| :--- | :---: | :--- |
+| **CRITICAL** | **1.0** | A single critical backdoor guarantees repository risk $\ge 0.95$ |
+| **HIGH** | **0.9** | Significant exploit surface detected |
+| **MEDIUM** | **0.6** | Suspicious configuration or moderate risk |
+| **LOW** | **0.3** | Informational or low-impact signal |
 
 ---
 

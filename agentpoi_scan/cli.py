@@ -89,6 +89,14 @@ def main(argv: list[str] | None = None) -> int:
             cfg["privacy"]["local_only"] = True
         if args.sarif:
             cfg["sarif_path"] = args.sarif
+        elif args.workdir:
+            cfg["sarif_path"] = str(Path(args.workdir) / "findings.sarif")
+        if not args.branch and isinstance(args.repo, str):
+            from agentpoi_scan.fetch.snapshot_client import parse_repo_branch
+
+            parsed_branch = parse_repo_branch(args.repo)
+            if parsed_branch:
+                args.branch = parsed_branch
         token = os.environ.get("GITHUB_TOKEN") or cfg.get("github_token")
         if token:
             cfg["github_token"] = token

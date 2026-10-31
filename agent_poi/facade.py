@@ -101,7 +101,10 @@ class FinancialGuard:
         )
         self.agent = FinancialAgent(
             state_anchor=self.anchor,
-            enable_civ_firewall=(policy in (SecurityPolicy.STRICT, SecurityPolicy.DEFENSIVE)),
+            enable_civ_firewall=(
+                policy in (SecurityPolicy.STRICT, SecurityPolicy.DEFENSIVE, SecurityPolicy.MONITORING)
+            ),
+            monitor_only=(policy == SecurityPolicy.MONITORING),
         )
         self.prompt_locator = PromptLocate()
         self.causal_armor = CausalArmor()
@@ -296,7 +299,7 @@ class FinancialGuard:
         delta = self.agent.delta_extractor.extract(context)
         if delta.target_account and delta.target_account != vendor_account:
             violations.append(
-                f"CONTEXT DIVERGENCE: Context target account '{delta.target_account}' "
+                f"INVOICE ACCOUNT HIJACK: Context target account '{delta.target_account}' "
                 f"diverges from validated PO vendor account '{vendor_account}'."
             )
         if delta.amount is not None:

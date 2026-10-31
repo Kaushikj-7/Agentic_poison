@@ -50,9 +50,11 @@ def finding_snippet(context: ScanContext, finding: Finding) -> str:
     chosen = [ln[:MAX_LINE_CHARS] for ln in chosen]
     marker = f"UNTRUSTED-{secrets.token_hex(4)}"
     body = "\n".join(chosen)
+    should_redact = getattr(context, "redact_secrets", True)
+    content = redact(body) if should_redact else body
     return (
         f"<<<{marker}:repo-text-begin>>>\n"
-        f"{redact(body)}\n"
+        f"{content}\n"
         f"<<<{marker}:repo-text-end>>>"
     )
 
