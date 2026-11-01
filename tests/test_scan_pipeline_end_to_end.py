@@ -151,6 +151,42 @@ def test_pipeline_accepts_file_path_config(tmp_path):
     pipeline2.store.close()
 
 
+def test_remote_snapshot_uses_fetch_config_caps(tmp_path, monkeypatch):
+    """Verifies that _remote_snapshot honors fetch.max_total_mb, fetch.max_files, and fetch.max_depth."""
+    from agentpoi_scan.fetch.safe_extract import Manifest
+    from agentpoi_scan.fetch.snapshot_client import Snapshot
+
+    pipeline = ScanPipeline(
+        store_path=tmp_path / "test.sqlite3",
+        config={"fetch": {"max_total_mb": 750, "max_files": 25000, "max_depth": 25}},
+    )
+
+    captured_kwargs = {}
+
+    def fake_extract(tar_bytes, dest, **kwargs):
+        captured_kwargs.update(kwargs)
+        return Manifest(snapshot_dir=str(dest), commit_sha="a" * 40, files={})
+
+    tarball = tmp_path / "fake.tar.gz"
+    tarball.write_bytes(b"dummy")
+
+    monkeypatch.setattr("agentpoi_scan.pipeline.extract_snapshot", fake_extract)
+    monkeypatch.setattr(
+        pipeline.client,
+        "fetch",
+        lambda url, ref=None, dest_dir=None: Snapshot(
+            tarball_path=tarball, commit_sha="a" * 40, repo="test/repo"
+        ),
+    )
+
+    pipeline._remote_snapshot("test/repo", None, tmp_path / "work")
+    pipeline.store.close()
+    assert captured_kwargs.get("max_total_mb") == 750
+    assert captured_kwargs.get("max_files") == 25000
+    assert captured_kwargs.get("max_depth") == 25
+
+
+
 def test_local_snapshot_ignores_venv_temp_and_git(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.py").write_text("print('hello')", encoding="utf-8")

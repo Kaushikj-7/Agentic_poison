@@ -20,7 +20,13 @@ from agentpoi_scan.agents.llm_bridge import TieredProviders, build_default_provi
 from agentpoi_scan.agents.router import EscalationPolicy, Router
 from agentpoi_scan.agents.triage import TriageAgent
 from agentpoi_scan.fetch.registry import load_scan_registry
-from agentpoi_scan.fetch.safe_extract import Manifest, extract_snapshot
+from agentpoi_scan.fetch.safe_extract import (
+    DEFAULT_MAX_DEPTH,
+    DEFAULT_MAX_FILES,
+    DEFAULT_MAX_TOTAL_MB,
+    Manifest,
+    extract_snapshot,
+)
 from agentpoi_scan.fetch.snapshot_client import SnapshotClient
 from agentpoi_scan.fetch.workspace import (
     DEFAULT_WORKSPACE_ROOT,
@@ -175,8 +181,14 @@ class ScanPipeline:
         """Fetches into a fresh isolated workspace; purges it if setup fails."""
         fetch_cfg = self.cfg.get("fetch", {})
         max_tarball_bytes = fetch_cfg.get("max_tarball_bytes")
-        max_total_mb = int(max_tarball_bytes // (1024 * 1024)) if max_tarball_bytes else 50
-        max_files = int(fetch_cfg.get("max_files", 5000))
+        if "max_total_mb" in fetch_cfg:
+            max_total_mb = int(fetch_cfg["max_total_mb"])
+        elif max_tarball_bytes:
+            max_total_mb = int(max_tarball_bytes // (1024 * 1024))
+        else:
+            max_total_mb = DEFAULT_MAX_TOTAL_MB
+        max_files = int(fetch_cfg.get("max_files", DEFAULT_MAX_FILES))
+        max_depth = int(fetch_cfg.get("max_depth", DEFAULT_MAX_DEPTH))
         workspace = IsolatedWorkspace(root=workdir or DEFAULT_WORKSPACE_ROOT)
         try:
             snapshot = self.client.fetch(repo_url, ref=ref, dest_dir=workspace.path)
@@ -186,6 +198,7 @@ class ScanPipeline:
                 snapshot_dir,
                 max_files=max_files,
                 max_total_mb=max_total_mb,
+                max_depth=max_depth,
             )
         except Exception:
             workspace.purge()

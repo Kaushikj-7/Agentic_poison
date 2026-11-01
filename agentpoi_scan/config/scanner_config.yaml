@@ -42,9 +42,9 @@ router:
     malware_score_gte: 0.6
   budget_usd_per_repo: 2.0
 fetch:
-  max_files: 20000
-  max_total_mb: 500
-  max_depth: 20
+  max_files: 50000
+  max_total_mb: 1000
+  max_depth: 30
 privacy:
   local_only: false
   redact_secrets: true

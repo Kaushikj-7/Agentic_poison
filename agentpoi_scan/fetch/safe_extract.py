@@ -15,11 +15,11 @@ import os
 import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
-DEFAULT_MAX_FILES = 20000
-DEFAULT_MAX_TOTAL_MB = 500
-DEFAULT_MAX_DEPTH = 20
+DEFAULT_MAX_FILES = 50000
+DEFAULT_MAX_TOTAL_MB = 1000
+DEFAULT_MAX_DEPTH = 30
 MAX_SINGLE_FILE_MB = 100
 TEXT_EXTENSIONS = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".rb", ".go", ".rs", ".java", ".c", ".cc",
@@ -91,6 +91,61 @@ def _check_member_name(name: str, max_depth: int) -> str:
     return "/".join(parts)
 
 
+def _normalize_member_relpath(name: str, max_depth: int) -> Optional[str]:
+    """Validates root-relative member path; returns stripped relative path or None."""
+    if PurePosixPath(name).is_absolute() or name.startswith(("/", "\\")):
+        raise ExtractionError(f"absolute member path: {name!r}")
+    if name.startswith("./"):
+        name = name[2:]
+    parts = PurePosixPath(name).parts
+    if not parts or len(parts) <= 1:
+        return None
+    stripped = "/".join(parts[1:])
+    return _check_member_name(stripped, max_depth=max_depth)
+
+
+def _extract_single_member(
+    tf: tarfile.TarFile,
+    member: tarfile.TarInfo,
+    dest: Path,
+    manifest: Manifest,
+    rel: str,
+) -> int:
+    """Extracts a single verified regular member to dest with 0o644 permissions."""
+    target = dest / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    src = tf.extractfile(member)
+    if src is None:
+        manifest.skipped.append((rel, "unreadable member"))
+        return 0
+    data = src.read()
+    target.write_bytes(data)
+    os.chmod(target, 0o644)
+    manifest.files[rel] = len(data)
+    manifest.sha256[rel] = hashlib.sha256(data).hexdigest()
+    return len(data)
+
+
+def _should_skip_member(
+    member: tarfile.TarInfo, rel: str, single_limit: int, manifest: Manifest
+) -> bool:
+    """Checks whether a member should be skipped (git metadata, non-file, over single cap)."""
+    pure_rel = PurePosixPath(rel)
+    if pure_rel.name == ".gitmodules" or any(
+        p == ".git" or (p.startswith(".git") and p != ".github") for p in pure_rel.parts
+    ):
+        manifest.skipped.append((rel, "prohibited git metadata entry"))
+        return True
+    if not member.isfile():
+        reason = {tarfile.SYMTYPE: "symlink"}.get(member.type, "non-regular file")
+        manifest.skipped.append((rel, reason))
+        return True
+    if member.size > single_limit:
+        manifest.skipped.append((rel, "exceeds per-file size cap"))
+        return True
+    return False
+
+
 def extract_snapshot(
     tar_bytes: bytes,
     dest: Path,
@@ -113,53 +168,21 @@ def extract_snapshot(
 
     with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:*") as tf:
         for member in tf.getmembers():
-            name = member.name
-            if PurePosixPath(name).is_absolute() or name.startswith(("/", "\\")):
-                raise ExtractionError(f"absolute member path: {name!r}")
-            if name.startswith("./"):
-                name = name[2:]
-            parts = PurePosixPath(name).parts
-            if not parts:
-                continue
-            stripped = "/".join(parts[1:]) if len(parts) > 1 else ""
-            if not stripped:
-                # Top-level directory entry of a GitHub tarball (repo-sha/).
-                continue
-            rel = _check_member_name(stripped, max_depth=max_depth)
-            pure_rel = PurePosixPath(rel)
-            if pure_rel.name == ".gitmodules" or any(
-                p == ".git" or (p.startswith(".git") and p != ".github") for p in pure_rel.parts
-            ):
-                manifest.skipped.append((rel, "prohibited git metadata entry"))
-                continue
-            if not member.isfile():
-                reason = {tarfile.SYMTYPE: "symlink"}.get(
-                    member.type, "non-regular file"
-                )
-                manifest.skipped.append((rel, reason))
-                continue
-            if member.size > single_limit:
-                manifest.skipped.append((rel, "exceeds per-file size cap"))
+            rel = _normalize_member_relpath(member.name, max_depth=max_depth)
+            if not rel or _should_skip_member(member, rel, single_limit, manifest):
                 continue
             if file_count + 1 > max_files:
-                raise ExtractionError("file count cap exceeded")
+                raise ExtractionError(
+                    f"file count cap exceeded ({file_count + 1} files > {max_files} limit)"
+                )
             if total_bytes + member.size > total_limit:
-                raise ExtractionError("total size cap exceeded")
+                raise ExtractionError(
+                    f"total size cap exceeded ({(total_bytes + member.size) / (1024 * 1024):.1f} MB > {max_total_mb} MB limit)"
+                )
 
-            target = dest / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            src = tf.extractfile(member)
-            if src is None:
-                manifest.skipped.append((rel, "unreadable member"))
-                continue
-            data = src.read()
-            target.write_bytes(data)
-            os.chmod(target, 0o644)
-
-            digest = hashlib.sha256(data).hexdigest()
-            manifest.files[rel] = len(data)
-            manifest.sha256[rel] = digest
-            file_count += 1
-            total_bytes += len(data)
+            extracted_bytes = _extract_single_member(tf, member, dest, manifest, rel)
+            if extracted_bytes > 0:
+                file_count += 1
+                total_bytes += extracted_bytes
 
     return manifest
