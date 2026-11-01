@@ -241,6 +241,9 @@ def extract_json(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+NEMOTRON_3_ULTRA_FREE = "nvidia/nemotron-3-ultra-550b-a55b:free"
+NEMOTRON_3_5_LIGHTNING_FREE = "nvidia/nemotron-3.5-lightning:free"
+
 DEFAULT_FREE_MODELS: Dict[str, str] = {
     "local": "nvidia/nemotron-3.5-lightning:free",
     "frontier": "google/gemma-4-31b-it:free",
@@ -261,7 +264,10 @@ def build_default_providers(config: Dict[str, Any]) -> Tuple[TieredProviders, Di
     """
     import os
 
-    from agent_poi.agent.llm_provider import OllamaProvider, OpenRouterProvider
+    from agent_poi.agent.llm_provider import (
+        OllamaProvider,
+        OpenRouterProvider,
+    )
 
     providers: Dict[str, Any] = {}
     unavailable: Dict[str, str] = {}

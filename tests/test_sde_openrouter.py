@@ -109,6 +109,16 @@ def test_openrouter_model_selection_env_override(monkeypatch):
     assert provider.model == LLAMA_MODEL
 
 
+def test_openrouter_model_selection_nemotron_3_ultra():
+    """Verify NVIDIA: Nemotron 3 Ultra (free) normalization and configuration."""
+    from agentpoi_sde.agent.llm_provider import NEMOTRON_3_ULTRA_MODEL
+
+    provider = OpenRouterProvider(api_key=MOCK_KEY, model="NVIDIA: Nemotron 3 Ultra (free)")
+    assert provider.model == NEMOTRON_3_ULTRA_MODEL
+    assert provider.model == "nvidia/nemotron-3-ultra-550b-a55b:free"
+    assert provider.name == "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free"
+
+
 def test_openrouter_custom_referer_and_title():
     """Verify custom referer and title headers for application tracking."""
     custom_ref = "https://custom.engineering.internal"

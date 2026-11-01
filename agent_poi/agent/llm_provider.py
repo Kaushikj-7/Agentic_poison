@@ -118,6 +118,23 @@ class OllamaProvider(BaseLLMProvider):
             return self.fallback.generate(prompt, system_prompt)
 
 
+NEMOTRON_3_ULTRA_FREE = "nvidia/nemotron-3-ultra-550b-a55b:free"
+NEMOTRON_3_5_LIGHTNING_FREE = "nvidia/nemotron-3.5-lightning:free"
+
+
+def normalize_openrouter_model(model: Optional[str]) -> str:
+    """Normalize user display names or aliases to canonical OpenRouter model IDs."""
+    if not model:
+        return NEMOTRON_3_ULTRA_FREE
+    cleaned = model.strip()
+    lowered = cleaned.lower()
+    if "nemotron" in lowered and ("ultra" in lowered or "550b" in lowered):
+        return NEMOTRON_3_ULTRA_FREE
+    if "nemotron" in lowered and "lightning" in lowered:
+        return NEMOTRON_3_5_LIGHTNING_FREE
+    return cleaned
+
+
 class OpenRouterProvider(BaseLLMProvider):
     """OpenRouter API client supporting free models (NVIDIA Nemotron, Llama 3.3).
 
@@ -129,8 +146,8 @@ class OpenRouterProvider(BaseLLMProvider):
 
     OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
     DEFAULT_FREE_MODELS = [
-        "nvidia/nemotron-3.5-lightning:free",
         "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "nvidia/nemotron-3.5-lightning:free",
         "google/gemma-4-31b-it:free",
     ]
 
@@ -141,7 +158,8 @@ class OpenRouterProvider(BaseLLMProvider):
         timeout: int = 30,
     ):
         self.api_key = api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY", "")
-        self.model = model or os.environ.get("OPENROUTER_MODEL", self.DEFAULT_FREE_MODELS[0])
+        raw_model = model or os.environ.get("OPENROUTER_MODEL", self.DEFAULT_FREE_MODELS[0])
+        self.model = normalize_openrouter_model(raw_model)
         self.timeout = timeout
         self.fallback = MockLLMProvider()
 

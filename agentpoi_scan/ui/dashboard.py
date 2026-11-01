@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -329,6 +330,19 @@ def _render_sarif_export(scan_id: int, findings: List[Finding]) -> None:
     st.code(sarif_json[:1000] + "\n...", language="json")
 
 
+def _render_advisory_banner() -> None:
+    """Render the active OpenRouter / NVIDIA Nemotron advisory engine status banner."""
+    active_model = os.environ.get("OPENROUTER_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free")
+    has_key = bool(os.environ.get("OPENROUTER_API_KEY", "").startswith("sk-or-"))
+    provider_badge = (
+        "NVIDIA: Nemotron 3 Ultra (free)"
+        if "nemotron" in active_model.lower()
+        else active_model
+    )
+    status_text = "API Key Active" if has_key else "Offline / Local Heuristics"
+    st.info(f"Advisory Engine: {provider_badge} | {status_text}", icon="🟢")
+
+
 def main_app(store_path: Optional[str | Path] = None) -> None:
     """Main Streamlit dashboard entry point."""
     if st is None:
@@ -336,6 +350,7 @@ def main_app(store_path: Optional[str | Path] = None) -> None:
 
     st.set_page_config(
         page_title="agentpoi-scan: Zero-Execution OSS Auditor",
+        page_icon="🛡️",
         layout="wide",
     )
 
@@ -345,6 +360,7 @@ def main_app(store_path: Optional[str | Path] = None) -> None:
     try:
         st.title("AGENTPOI-SCAN: ZERO-EXECUTION OSS VULNERABILITY & MALICIOUS CODE AUDITOR")
         st.caption("Enter any public GitHub repository or owner/repo. Scans are static and never execute repository code.")
+        _render_advisory_banner()
 
         # Scan Trigger Section
         with st.expander("Target Repository Scanner", expanded=False):

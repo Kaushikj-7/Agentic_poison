@@ -78,3 +78,20 @@ def test_openrouter_provider_model_fallback_on_failure(mock_post):
 
     assert res["content"] == "Approved wire"
     assert mock_post.call_count == 2
+
+
+def test_openrouter_nemotron_3_ultra_model_normalization():
+    """Verify NVIDIA Nemotron 3 Ultra display names and short aliases normalize to canonical ID."""
+    from agent_poi.agent.llm_provider import normalize_openrouter_model
+
+    expected = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    assert normalize_openrouter_model("NVIDIA: Nemotron 3 Ultra (free)") == expected
+    assert normalize_openrouter_model("nvidia/nemotron-3-ultra:free") == expected
+    assert normalize_openrouter_model("nvidia/nemotron-3-ultra-550b-a55b:free") == expected
+
+    provider = OpenRouterProvider(
+        api_key="sk-or-v1-testkey123456",
+        model="NVIDIA: Nemotron 3 Ultra (free)",
+    )
+    assert provider.model == expected
+    assert expected in provider.DEFAULT_FREE_MODELS

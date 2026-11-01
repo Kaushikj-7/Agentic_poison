@@ -91,3 +91,14 @@ def test_total_per_scan_cap_across_tiers_le_45(monkeypatch):
     assert verifier_cap == 10
     assert local_cap + frontier_cap + verifier_cap == 45
     assert cfg["limits"]["max_requests_per_scan"] == 45
+
+
+def test_scanner_nemotron_3_ultra_model_resolution(monkeypatch):
+    """Verify scanner tiers correctly instantiate and normalize NVIDIA Nemotron 3 Ultra."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-mock-key")
+    cfg = _load_scanner_config()
+    cfg["tiers"]["local"]["model"] = "NVIDIA: Nemotron 3 Ultra (free)"
+    providers, _ = build_default_providers(cfg)
+
+    local_p = providers.providers["local"]
+    assert local_p.provider.model == "nvidia/nemotron-3-ultra-550b-a55b:free"

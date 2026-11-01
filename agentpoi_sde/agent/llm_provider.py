@@ -52,7 +52,22 @@ _SYSTEM_PROMPT = (
 DEFAULT_MODEL = "qwen/qwen-2.5-coder-32b-instruct"
 LLAMA_MODEL = "meta-llama/llama-3.1-8b-instruct"
 LLAMA_3_3_MODEL = "meta-llama/llama-3.3-70b-instruct"
+NEMOTRON_3_ULTRA_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+NEMOTRON_LIGHTNING_MODEL = "nvidia/nemotron-3.5-lightning:free"
 DEEPSEEK_MODELS = ("deepseek-chat", "deepseek-coder", "deepseek-reasoner")
+
+
+def normalize_openrouter_model(model: Optional[str]) -> str:
+    """Normalize user display names or aliases to canonical OpenRouter model IDs."""
+    if not model:
+        return DEFAULT_MODEL
+    cleaned = model.strip()
+    lowered = cleaned.lower()
+    if "nemotron" in lowered and ("ultra" in lowered or "550b" in lowered):
+        return NEMOTRON_3_ULTRA_MODEL
+    if "nemotron" in lowered and "lightning" in lowered:
+        return NEMOTRON_LIGHTNING_MODEL
+    return cleaned
 
 
 def _decode_response(content: str) -> List[CodeMutation]:
@@ -213,7 +228,8 @@ class OpenRouterProvider:
 
         raw_key = api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY")
         self.api_key = raw_key if raw_key else None
-        self.model = model or os.environ.get("OPENROUTER_MODEL") or cfg.get("model") or DEFAULT_MODEL
+        raw_model = model or os.environ.get("OPENROUTER_MODEL") or cfg.get("model") or DEFAULT_MODEL
+        self.model = normalize_openrouter_model(raw_model)
         self.fallback_provider = fallback_provider
         self.base_url = self._validate_base_url(str(resolved_base_url).rstrip("/"))
         self.timeout_seconds = resolved_timeout
