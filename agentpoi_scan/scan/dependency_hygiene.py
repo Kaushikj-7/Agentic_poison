@@ -13,7 +13,7 @@ assumed; missing locks are reported as low-severity hygiene findings.
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 from agentpoi_scan.findings.model import Finding
 from agentpoi_scan.intel.codebase import Dependency, parse_dependencies
@@ -56,50 +56,78 @@ class DependencyHygieneScanner:
         for dep in dependencies:
             if len(findings) >= MAX_FINDINGS:
                 break
-            if dep.source in {"vcs", "path"}:
-                key = ("source", dep.manifest, dep.name)
-                if key in seen:
-                    continue
-                seen.add(key)
-                kind = "remote VCS" if dep.source == "vcs" else "local path"
-                findings.append(
-                    self._finding(
-                        dep,
-                        title=f"dependency from {kind}: {dep.name}",
-                        detail=(
-                            f"{dep.name} ({dep.ecosystem}) is declared in {dep.manifest} "
-                            f"from a {kind} source ({dep.specifier[:120]}); the resolved "
-                            "code is not pinned to a reviewed release"
-                        ),
-                        severity="high",
-                        maliciousness=0.35 if dep.source == "vcs" else 0.2,
-                        vulnerability=0.5,
-                        kind=dep.source,
-                    )
-                )
-            elif dep.ecosystem in FLOATING_ECOSYSTEMS and not dep.pinned:
-                key = ("unpinned", dep.manifest, dep.name, dep.line)
-                if key in seen:
-                    continue
-                seen.add(key)
-                findings.append(
-                    self._finding(
-                        dep,
-                        title=f"unpinned dependency: {dep.name}",
-                        detail=(
-                            f"{dep.name} is declared as {dep.specifier or '(no version)'} in "
-                            f"{dep.manifest}:{dep.line}; a floating range lets the resolved "
-                            "code change without a diff review"
-                        ),
-                        severity="medium",
-                        maliciousness=0.15,
-                        vulnerability=0.3,
-                        kind="unpinned",
-                    )
-                )
+            f_src = self._check_source_dep(dep, seen)
+            if f_src is not None:
+                findings.append(f_src)
+                continue
+            f_unp = self._check_unpinned_dep(context, dep, seen)
+            if f_unp is not None:
+                findings.append(f_unp)
 
         findings.extend(self._missing_lockfiles(context, dependencies, seen))
         return ScanResult(scanner=SCANNER_NAME, findings=findings[:MAX_FINDINGS])
+
+    def _check_source_dep(self, dep: Dependency, seen: Set[tuple]) -> Optional[Finding]:
+        if dep.source not in {"vcs", "path"}:
+            return None
+        key = ("source", dep.manifest, dep.name)
+        if key in seen:
+            return None
+        seen.add(key)
+        kind = "remote VCS" if dep.source == "vcs" else "local path"
+        return self._finding(
+            dep,
+            title=f"dependency from {kind}: {dep.name}",
+            detail=(
+                f"{dep.name} ({dep.ecosystem}) is declared in {dep.manifest} "
+                f"from a {kind} source ({dep.specifier[:120]}); the resolved "
+                "code is not pinned to a reviewed release"
+            ),
+            severity="high",
+            maliciousness=0.35 if dep.source == "vcs" else 0.2,
+            vulnerability=0.5,
+            kind=dep.source,
+        )
+
+    def _check_unpinned_dep(
+        self, context: ScanContext, dep: Dependency, seen: Set[tuple]
+    ) -> Optional[Finding]:
+        if dep.ecosystem not in FLOATING_ECOSYSTEMS or dep.pinned:
+            return None
+        if dep.manifest.lower().endswith("pyproject.toml") and self._has_companion_lock(
+            context, dep.manifest, dep.ecosystem
+        ):
+            return None
+        key = ("unpinned", dep.manifest, dep.name, dep.line)
+        if key in seen:
+            return None
+        seen.add(key)
+        return self._finding(
+            dep,
+            title=f"unpinned dependency: {dep.name}",
+            detail=(
+                f"{dep.name} is declared as {dep.specifier or '(no version)'} in "
+                f"{dep.manifest}:{dep.line}; a floating range lets the resolved "
+                "code change without a diff review"
+            ),
+            severity="medium",
+            maliciousness=0.15,
+            vulnerability=0.3,
+            kind="unpinned",
+        )
+
+    @classmethod
+    def _has_companion_lock(cls, context: ScanContext, manifest: str, ecosystem: str) -> bool:
+        wanted = LOCKFILES.get(ecosystem, set())
+        if not wanted:
+            return False
+        manifest_dir = PurePosixPath(manifest).parent
+        for rel in context.file_index:
+            p = PurePosixPath(rel)
+            if p.name.lower() in wanted:
+                if p.parent == manifest_dir or p.parent == PurePosixPath("."):
+                    return True
+        return False
 
     # -- helpers ---------------------------------------------------------------
     @staticmethod

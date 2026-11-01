@@ -299,6 +299,39 @@ class Calculator:
             assert res.is_safe is False
             assert len(res.dangerous_calls) > 0
 
+    def test_xml_expansion_sinks_rejected(self):
+        validator = SlicerSecurityValidator()
+        codes = [
+            "import xml.etree.ElementTree as ET\ndef parse_xml(s): return ET.fromstring(s)\n",
+            "import xml.etree.ElementTree as ET\ndef parse_file(f): return ET.parse(f)\n",
+            "import xml.sax\ndef parse_sax(s): return xml.sax.parse(s, None)\n",
+            "import lxml.etree\ndef parse_lxml(s): return lxml.etree.fromstring(s)\n",
+        ]
+        for code in codes:
+            res = validator.validate(code)
+            assert res.is_safe is False, f"Expected unsafe for: {code}"
+            assert len(res.dangerous_calls) > 0
+
+    def test_dotted_ast_call_lines_recorded(self):
+        validator = SlicerSecurityValidator()
+        code = (
+            "import importlib\n"
+            "import urllib.request\n"
+            "\n"
+            "def f1(m):\n"
+            "    return importlib.import_module(m)\n"
+            "\n"
+            "def f2(u):\n"
+            "    return urllib.request.urlopen(u)\n"
+        )
+        res = validator.validate(code)
+        assert res.is_safe is False
+        line_numbers = [lineno for _, lineno in res.dangerous_call_lines]
+        assert 1 not in line_numbers
+        assert 2 not in line_numbers
+        assert 5 in line_numbers
+        assert 8 in line_numbers
+
     def test_assignment_alias_evasion_rejected(self):
         validator = SlicerSecurityValidator()
         code = """

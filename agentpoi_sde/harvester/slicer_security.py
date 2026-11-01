@@ -53,6 +53,19 @@ class SlicerSecurityValidator:
         "pty.spawn",
         "socket.connect",
         "_socket.connect",
+        "xml.etree.ElementTree.fromstring",
+        "xml.etree.ElementTree.parse",
+        "xml.etree.cElementTree.fromstring",
+        "xml.etree.cElementTree.parse",
+        "xml.sax.parse",
+        "xml.sax.parseString",
+        "lxml.etree.fromstring",
+        "lxml.etree.parse",
+        "lxml.etree.XML",
+        "xml.dom.minidom.parse",
+        "xml.dom.minidom.parseString",
+        "pickle.loads",
+        "pickle.load",
     }
 
     DANGEROUS_SYSCALLS: Set[str] = {
@@ -95,6 +108,12 @@ class SlicerSecurityValidator:
         "ftplib.",
         "smtplib.",
         "urllib3.",
+        "xml.etree.ElementTree.",
+        "xml.etree.cElementTree.",
+        "xml.sax.",
+        "lxml.etree.",
+        "xml.dom.minidom.",
+        "pickle.",
     )
 
     DANGEROUS_MODULES: Set[str] = {
@@ -117,6 +136,12 @@ class SlicerSecurityValidator:
         "builtins",
         "__builtins__",
         "importlib",
+        "xml.etree.ElementTree",
+        "xml.etree.cElementTree",
+        "xml.sax",
+        "lxml.etree",
+        "lxml",
+        "pickle",
     }
 
     DANGEROUS_EXACT_CALLS: Set[str] = {
@@ -295,6 +320,9 @@ class _SecurityASTVisitor(ast.NodeVisitor):
         self.dangerous_calls.append(name)
         lineno = getattr(node, "lineno", 1)
         self.dangerous_call_lines.append((name, lineno))
+        if "." in name:
+            bare_name = name.split(".")[-1]
+            self.dangerous_call_lines.append((bare_name, lineno))
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self._check_assignment(node.targets, node.value)
@@ -348,6 +376,20 @@ class _SecurityASTVisitor(ast.NodeVisitor):
             self.visit(gen)
         self.visit(node.elt)
 
+    def _bind_targets(self, targets: List[ast.AST], resolved: str, value: ast.AST) -> None:
+        if not resolved:
+            return
+        if self.validator._is_dangerous(resolved):
+            self._record_dangerous(resolved, value)
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    self.aliases[target.id] = resolved
+            return
+        if self.validator._is_dangerous_module(resolved):
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    self.aliases[target.id] = resolved
+
     def _check_assignment(self, targets: List[ast.AST], value: ast.AST) -> None:
         # Check if RHS is an assignment expression (ast.NamedExpr)
         if isinstance(value, ast.NamedExpr):
@@ -366,32 +408,14 @@ class _SecurityASTVisitor(ast.NodeVisitor):
         # Check if RHS is a getattr call
         getattr_target = self.validator._resolve_getattr_target(value, self.aliases)
         if getattr_target:
-            if self.validator._is_dangerous(getattr_target):
-                self._record_dangerous(getattr_target, value)
-                for target in targets:
-                    if isinstance(target, ast.Name):
-                        self.aliases[target.id] = getattr_target
-                return
-            if self.validator._is_dangerous_module(getattr_target):
-                for target in targets:
-                    if isinstance(target, ast.Name):
-                        self.aliases[target.id] = getattr_target
-                return
+            self._bind_targets(targets, getattr_target, value)
+            return
 
         # Check if RHS is a Name or Attribute resolving to dangerous symbol or module
         if isinstance(value, (ast.Name, ast.Attribute)):
             resolved = self.validator._resolve_call_name(value, self.aliases)
-            if self.validator._is_dangerous(resolved):
-                self._record_dangerous(resolved, value)
-                for target in targets:
-                    if isinstance(target, ast.Name):
-                        self.aliases[target.id] = resolved
-                return
-            if self.validator._is_dangerous_module(resolved):
-                for target in targets:
-                    if isinstance(target, ast.Name):
-                        self.aliases[target.id] = resolved
-                return
+            self._bind_targets(targets, resolved, value)
+            return
 
         # Check if RHS is a Call returning/creating dangerous resource (e.g. sock = socket.socket())
         if isinstance(value, ast.Call):

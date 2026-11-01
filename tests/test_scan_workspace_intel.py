@@ -228,6 +228,34 @@ def test_dependency_hygiene_flags_remote_unpinned_and_missing_locks(tmp_path):
     assert all(f.location for f in result.findings)
 
 
+def test_pyproject_range_suppressed_when_companion_lockfile_exists(tmp_path):
+    _write(
+        tmp_path,
+        "pyproject.toml",
+        '[project]\nname = "demo"\ndependencies = ["pydantic>=2.0", "fastapi>=0.100"]\n',
+    )
+    _write(tmp_path, "uv.lock", "version = 1\nrevision = 1\n")
+    result = DependencyHygieneScanner().run(_context(tmp_path))
+    unpinned = [f for f in result.findings if f.title.startswith("unpinned dependency")]
+    assert len(unpinned) == 0, f"Expected no unpinned findings when uv.lock exists, got: {unpinned}"
+    no_lock = [f for f in result.findings if "no lockfile" in f.title]
+    assert len(no_lock) == 0
+
+
+def test_pyproject_range_flagged_when_no_lockfile_exists(tmp_path):
+    _write(
+        tmp_path,
+        "pyproject.toml",
+        '[project]\nname = "demo"\ndependencies = ["pydantic>=2.0"]\n',
+    )
+    result = DependencyHygieneScanner().run(_context(tmp_path))
+    unpinned = [f for f in result.findings if f.title.startswith("unpinned dependency: pydantic")]
+    assert len(unpinned) == 1
+    no_lock = [f for f in result.findings if "no lockfile" in f.title]
+    assert len(no_lock) == 1
+
+
+
 # -- taint flow ----------------------------------------------------------------
 
 

@@ -87,3 +87,54 @@ def test_benign_imports_not_flagged(tmp_path):
     result = PythonSastScanner().run(ctx)
     assert len(result.findings) == 0
 
+
+def test_constant_literal_https_urlopen_downgraded(tmp_path):
+    code = (
+        "import urllib.request\n\n"
+        "def fetch():\n"
+        "    return urllib.request.urlopen('https://api.github.com/repos')\n"
+    )
+    ctx = _ctx(tmp_path, {"fetcher.py": code})
+    result = PythonSastScanner().run(ctx)
+    assert len(result.findings) == 1
+    f = result.findings[0]
+    assert f.severity == "low"
+    assert f.maliciousness == 0.05
+    assert f.vulnerability == 0.1
+    assert "constant-literal" in f.title
+
+
+def test_dynamic_tainted_urlopen_remains_high(tmp_path):
+    code = (
+        "import urllib.request\n\n"
+        "def fetch(url):\n"
+        "    return urllib.request.urlopen(url)\n"
+    )
+    ctx = _ctx(tmp_path, {"fetcher.py": code})
+    result = PythonSastScanner().run(ctx)
+    assert len(result.findings) == 1
+    f = result.findings[0]
+    assert f.severity == "high"
+    assert f.maliciousness == 0.6
+
+
+def test_dotted_ast_calls_report_exact_invocation_lines(tmp_path):
+    code = (
+        "import importlib\n"
+        "import urllib.request\n"
+        "\n"
+        "def load_mod(name):\n"
+        "    return importlib.import_module(name)\n"
+        "\n"
+        "def get_url(url):\n"
+        "    return urllib.request.urlopen(url)\n"
+    )
+    ctx = _ctx(tmp_path, {"tool.py": code})
+    result = PythonSastScanner().run(ctx)
+    assert len(result.findings) >= 1
+    for f in result.findings:
+        assert 1 not in f.lines, f"Line 1 (import) incorrectly reported in {f.lines}"
+        assert 2 not in f.lines, f"Line 2 (import) incorrectly reported in {f.lines}"
+        assert any(ln in (5, 8) for ln in f.lines)
+
+
